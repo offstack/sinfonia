@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.sinfonia/
+sinfonia.yaml
+*.log
+.env
+coverage/

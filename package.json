@@ -1,0 +1,40 @@
+{
+  "name": "sinfonia",
+  "version": "0.1.0",
+  "description": "Autonomous code improvement pipeline for Claude Code — monitors Linear, dispatches agents, scans codebases, integrates with Sentry/GitHub",
+  "type": "module",
+  "bin": {
+    "sinfonia": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.0",
+    "commander": "^13.0.0",
+    "croner": "^9.0.0",
+    "fastify": "^5.0.0",
+    "@fastify/websocket": "^11.0.0",
+    "graphql-request": "^7.0.0",
+    "handlebars": "^4.7.8",
+    "simple-git": "^3.27.0",
+    "yaml": "^2.6.0",
+    "zod": "^3.24.0",
+    "pino": "^9.0.0",
+    "pino-pretty": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

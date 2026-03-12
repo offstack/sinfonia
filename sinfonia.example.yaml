@@ -1,0 +1,127 @@
+# Sinfonia — Autonomous Code Improvement Pipeline for Claude Code
+# Copy this to sinfonia.yaml and configure for your project.
+
+project:
+  name: my-project
+  repo: ./
+
+# Issue tracker configuration
+tracker:
+  kind: linear
+  api_key: $LINEAR_API_KEY
+  project_slug: MY-PROJECT
+  active_states:
+    - Todo
+    - In Progress
+    - Rework
+
+# Orchestrator settings
+orchestrator:
+  polling_interval_ms: 30000
+  max_concurrent_agents: 5
+  max_concurrent_by_state:
+    todo: 3
+    rework: 2
+  retry:
+    max_backoff_ms: 300000
+
+# Workspace isolation
+workspace:
+  root: ./.sinfonia/workspaces
+  strategy: worktree
+  hooks:
+    after_create: ""
+    before_run: ""
+    after_run: ""
+    before_remove: ""
+  hooks_timeout_ms: 60000
+
+# Claude Code agent configuration
+agent:
+  command: claude
+  allowed_tools:
+    - Bash
+    - Read
+    - Write
+    - Edit
+    - Glob
+    - Grep
+  max_turns: 30
+  turn_timeout_ms: 900000
+  stall_timeout_ms: 120000
+
+# Prompt template — uses Handlebars syntax
+prompt: |
+  You are working on issue {{issue.identifier}}: {{issue.title}}
+
+  ## Description
+  {{issue.description}}
+
+  ## Instructions
+  1. Work in the current directory (an isolated git worktree)
+  2. Understand the codebase before making changes
+  3. Implement the fix or feature described above
+  4. Write or update tests as needed
+  5. Commit your changes with a descriptive message
+  6. Push your branch and create a PR
+
+# Code scanners (proactive analysis)
+scanners:
+  schedule: "0 2 * * *"
+  on_push: false
+  modules:
+    security:
+      enabled: false
+      severity_threshold: medium
+      include: ["src/**/*.ts"]
+    performance:
+      enabled: false
+      include: ["src/**/*.ts"]
+    dry:
+      enabled: false
+      min_duplicate_lines: 10
+      include: ["src/**/*.ts"]
+    simplify:
+      enabled: false
+      max_complexity: 15
+      include: ["src/**/*.ts"]
+    test-coverage:
+      enabled: false
+    custom:
+      enabled: false
+      prompt_file: ""
+  linear:
+    target_state: Backlog
+    labels:
+      - auto-detected
+    dedup: true
+
+# External integrations (reactive)
+integrations:
+  server_port: 3100
+  sources:
+    sentry:
+      enabled: false
+      secret: $SENTRY_WEBHOOK_SECRET
+      auto_triage: false
+      min_occurrences: 5
+      ignore_environments: []
+      ignore_patterns: []
+    github:
+      enabled: false
+      secret: $GITHUB_WEBHOOK_SECRET
+      events:
+        - dependabot_alert
+    slack:
+      enabled: false
+      signing_secret: $SLACK_SIGNING_SECRET
+      channel: "#bugs"
+      trigger_emoji: ":bug:"
+    generic:
+      enabled: false
+
+# Dashboard configuration
+dashboard:
+  tui: true
+  web: false
+  web_port: 3200

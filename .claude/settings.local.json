@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(curl -s https://raw.githubusercontent.com/openai/symphony/main/SPEC.md)",
+      "Bash(curl -s https://raw.githubusercontent.com/openai/symphony/main/elixir/README.md)"
+    ]
+  }
+}
