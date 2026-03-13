@@ -35,6 +35,13 @@ export class Sinfonia {
   async start(): Promise<void> {
     const config = this.configWatcher.config;
 
+    // If TUI will be used, suppress stdout logging immediately so startup
+    // logs don't bleed into the TUI display
+    const willUseTui = config.dashboard.tui && !this.options.scannersOnly && !this.options.web;
+    if (willUseTui) {
+      disableStdoutLogging();
+    }
+
     logger.info({ project: config.project.name }, "Sinfonia starting");
 
     // Start config watcher

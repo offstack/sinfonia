@@ -35,7 +35,7 @@ export class OrchestratorState {
   // Claims
   isClaimed(issueId: string): boolean {
     const state = this.claims.get(issueId);
-    return state === "claimed" || state === "running";
+    return state === "claimed" || state === "running" || state === "retry_queued" || state === "completed";
   }
 
   claim(issueId: string): boolean {
@@ -85,11 +85,19 @@ export class OrchestratorState {
     const entry = this._retryQueue.get(issueId);
     if (entry?.timer) clearTimeout(entry.timer);
     this._retryQueue.delete(issueId);
+    // Release the claim so the retry timer can re-dispatch
+    if (this.claims.get(issueId) === "retry_queued") {
+      this.claims.set(issueId, "released");
+    }
   }
 
   // Completed
   markCompleted(issueId: string): void {
-    this.release(issueId);
+    this.claims.set(issueId, "completed");
+    this._running.delete(issueId);
+    const retryEntry = this._retryQueue.get(issueId);
+    if (retryEntry?.timer) clearTimeout(retryEntry.timer);
+    this._retryQueue.delete(issueId);
     if (!this._completed.includes(issueId)) {
       this._completed.push(issueId);
     }

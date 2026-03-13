@@ -1,5 +1,5 @@
 // Issue claim states (Symphony spec)
-export type ClaimState = "unclaimed" | "claimed" | "running" | "retry_queued" | "released";
+export type ClaimState = "unclaimed" | "claimed" | "running" | "retry_queued" | "released" | "completed";
 
 // Run attempt outcomes
 export type RunOutcome = "succeeded" | "failed" | "timed_out" | "stalled" | "canceled";

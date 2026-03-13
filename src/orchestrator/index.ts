@@ -205,9 +205,11 @@ export class Orchestrator {
 
     try {
       // Move issue to "In Progress" in tracker (non-fatal if it fails)
-      if (issue.state.toLowerCase() !== "in progress") {
+      let currentState = issue.state;
+      if (currentState.toLowerCase() !== "in progress") {
         try {
           await this.tracker.updateIssueState(issue.id, "In Progress");
+          currentState = "In Progress";
         } catch (err) {
           logger.warn({ err, issue: issue.identifier }, "failed to transition issue to In Progress");
         }
@@ -231,7 +233,7 @@ export class Orchestrator {
         startedAt: new Date(),
         lastEventAt: new Date(),
         tokens: { input: 0, output: 0 },
-        state: issue.state,
+        state: currentState,
         lastEvent: "starting",
       };
 
