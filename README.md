@@ -154,6 +154,111 @@ Webhook receivers that turn external events into Linear issues:
 
 Each integration has an `auto_triage` flag — when enabled, issues go directly to Todo (and Sinfonia fixes them immediately). When disabled, they go to Backlog for human review first.
 
+## Status Flow
+
+Sinfonia automatically moves issues through Linear workflow states as it processes them. The default flow is:
+
+```
+Todo → In Progress → Done
+```
+
+### How State Transitions Work
+
+| Transition | Trigger | Configurable? |
+|-----------|---------|---------------|
+| **Todo → In Progress** | Orchestrator claims and dispatches the issue | Source state via `tracker.active_states` |
+| **In Progress → Done** | Agent completes successfully (PR created) | Target state via `orchestrator.done_state` |
+| **In Progress → Retry Queue** | Agent fails, stalls, or times out | Retries up to 10x with exponential backoff |
+| **Retry Queue → In Progress** | Backoff timer expires, issue is re-dispatched | Max delay via `orchestrator.retry.max_backoff_ms` |
+
+### Configuring the Flow
+
+#### 1. Set which states Sinfonia watches
+
+The `active_states` list tells Sinfonia which Linear states to monitor. Issues in these states are candidates for dispatch:
+
+```yaml
+tracker:
+  active_states:
+    - Todo
+    - In Progress
+    - Rework        # optional: re-dispatch issues sent back for rework
+```
+
+#### 2. Set the completion state
+
+When an agent finishes successfully, Sinfonia moves the issue to `done_state`:
+
+```yaml
+orchestrator:
+  done_state: Done                  # default
+  # done_state: "Ready for Review"  # use this for a review step before Done
+```
+
+#### 3. Example: Adding a "Ready for Review" step
+
+If your team reviews PRs before closing issues, configure Sinfonia to land issues in "Ready for Review" instead of "Done":
+
+```yaml
+tracker:
+  active_states:
+    - Todo
+    - In Progress
+
+orchestrator:
+  done_state: "Ready for Review"
+```
+
+This gives you the flow: **Todo → In Progress → Ready for Review → Done** (a human moves the issue to Done after reviewing the PR).
+
+#### 4. Per-state concurrency limits
+
+Control how many agents can work on issues from each state simultaneously:
+
+```yaml
+orchestrator:
+  max_concurrent_agents: 5        # global limit
+  max_concurrent_by_state:
+    todo: 3                       # max 3 new issues at once
+    rework: 2                     # max 2 rework items at once
+```
+
+### Lifecycle Diagram
+
+```
+                    ┌──────────┐
+  Scanners/         │ Backlog  │  Human review
+  Integrations ───► │          ├──────────────┐
+                    └──────────┘              │
+                                              ▼
+                                        ┌──────────┐
+                                        │   Todo   │◄──── Manual or auto-triage
+                                        └────┬─────┘
+                                             │  Orchestrator claims issue
+                                             ▼
+                                      ┌─────────────┐
+                                      │ In Progress  │ Agent working
+                                      └──────┬──────┘
+                                             │
+                              ┌──────────────┼──────────────┐
+                              │              │              │
+                          Success         Failure       Timeout/Stall
+                              │              │              │
+                              ▼              ▼              ▼
+                    ┌────────────────┐  ┌────────────┐  ┌────────────┐
+                    │ Ready for      │  │   Retry    │  │   Retry    │
+                    │ Review / Done  │  │   Queue    │  │   Queue    │
+                    └────────────────┘  └─────┬──────┘  └─────┬──────┘
+                                              │              │
+                                              └──────┬───────┘
+                                                     │ Exponential backoff
+                                                     │ (up to 10 attempts)
+                                                     ▼
+                                               ┌──────────┐
+                                               │   Todo   │ Re-dispatched
+                                               └──────────┘
+```
+
 ## Configuration
 
 Sinfonia uses a single `sinfonia.yaml` file with hot-reload:
