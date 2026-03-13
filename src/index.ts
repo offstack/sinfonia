@@ -4,7 +4,7 @@ import { LinearClient } from "./tracker/index.js";
 import { Orchestrator } from "./orchestrator/index.js";
 import { ScannerRunner } from "./scanners/index.js";
 import { IntegrationServer } from "./integrations/index.js";
-import { WebDashboard, renderDashboard } from "./dashboard/index.js";
+import { WebDashboard, renderDashboard, type TuiContext } from "./dashboard/index.js";
 import { createLogger, disableStdoutLogging, enableStdoutLogging } from "./shared/logger.js";
 
 const logger = createLogger("sinfonia");
@@ -121,13 +121,26 @@ export class Sinfonia {
     // Suppress pino stdout output so it doesn't corrupt the TUI
     disableStdoutLogging();
 
+    // Build TUI context with service info
+    const config = this.configWatcher.config;
+    const tuiCtx: TuiContext = {};
+    if (this.integrationServer) {
+      tuiCtx.integrationPort = config.integrations.server_port;
+    }
+    const enabledScanners = Object.entries(config.scanners.modules)
+      .filter(([, m]) => m.enabled)
+      .map(([name]) => name);
+    if (enabledScanners.length > 0) {
+      tuiCtx.scannersEnabled = enabledScanners;
+    }
+
     // Clear screen and render
     process.stdout.write("\x1b[2J\x1b[H");
 
     this.tuiInterval = setInterval(() => {
       if (!this.orchestrator) return;
       const snapshot = this.orchestrator.snapshot();
-      const output = renderDashboard(snapshot);
+      const output = renderDashboard(snapshot, tuiCtx);
 
       // Move cursor to top and redraw
       process.stdout.write("\x1b[H");

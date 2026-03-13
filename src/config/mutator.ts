@@ -97,6 +97,64 @@ export function updateOrchestratorSettings(
   writeConfig(configPath, parsed);
 }
 
+export function updateIntegrationConfig(
+  configPath: string,
+  name: string,
+  fields: Record<string, unknown>,
+): void {
+  const parsed = readConfig(configPath);
+
+  const integrations = (parsed.integrations ?? {}) as Record<string, unknown>;
+  const sources = (integrations.sources ?? {}) as Record<string, Record<string, unknown>>;
+
+  if (!sources[name]) {
+    sources[name] = { enabled: false };
+  }
+
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined) continue;
+    sources[name][key] = value;
+  }
+
+  integrations.sources = sources;
+  parsed.integrations = integrations;
+
+  writeConfig(configPath, parsed);
+}
+
+export function updateScannerConfig(
+  configPath: string,
+  name: string,
+  fields: Record<string, unknown>,
+): void {
+  const parsed = readConfig(configPath);
+
+  const scanners = (parsed.scanners ?? {}) as Record<string, unknown>;
+  const modules = (scanners.modules ?? {}) as Record<string, Record<string, unknown>>;
+
+  if (!modules[name]) {
+    modules[name] = { enabled: false };
+  }
+
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined) continue;
+    modules[name][key] = value;
+  }
+
+  scanners.modules = modules;
+  parsed.scanners = scanners;
+
+  writeConfig(configPath, parsed);
+}
+
+export function updateIntegrationPort(configPath: string, port: number): void {
+  const parsed = readConfig(configPath);
+  const integrations = (parsed.integrations ?? {}) as Record<string, unknown>;
+  integrations.server_port = port;
+  parsed.integrations = integrations;
+  writeConfig(configPath, parsed);
+}
+
 // ── Internal Helpers ────────────────────────────────────────────────────
 
 function readConfig(configPath: string): Record<string, unknown> {

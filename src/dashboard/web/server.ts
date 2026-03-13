@@ -9,6 +9,8 @@ import {
   updateStateFlow,
   switchProject,
   updateOrchestratorSettings,
+  updateIntegrationConfig,
+  updateScannerConfig,
 } from "../../config/mutator.js";
 import { loadConfig } from "../../config/loader.js";
 import { createLogger } from "../../shared/logger.js";
@@ -92,6 +94,7 @@ export class WebDashboard {
         polling_interval_ms: snap.pollingIntervalMs,
         scanners: this.scannerRunner?.listModules() ?? [],
         integrations: this.integrationServer?.listSources() ?? [],
+        integration_port: this.getIntegrationPort(),
       };
     });
 
@@ -105,6 +108,22 @@ export class WebDashboard {
     this.app.get("/api/v1/config", async () => {
       try {
         const config = loadConfig(this.configPath);
+        // Return full config (except sensitive api_key)
+        const sanitizedSources: Record<string, Record<string, unknown>> = {};
+        for (const [name, src] of Object.entries(config.integrations.sources)) {
+          sanitizedSources[name] = {
+            enabled: src.enabled,
+            secret: src.secret ? "••••••" : "",
+            secret_set: !!src.secret,
+            auto_triage: src.auto_triage,
+            min_occurrences: src.min_occurrences,
+            ignore_environments: src.ignore_environments,
+            ignore_patterns: src.ignore_patterns,
+            events: src.events,
+            channel: src.channel,
+            trigger_emoji: src.trigger_emoji,
+          };
+        }
         return {
           success: true,
           config: {
@@ -118,6 +137,15 @@ export class WebDashboard {
               kind: config.tracker.kind,
               project_slug: config.tracker.project_slug,
               active_states: config.tracker.active_states,
+            },
+            integrations: {
+              server_port: config.integrations.server_port,
+              sources: sanitizedSources,
+            },
+            scanners: {
+              schedule: config.scanners.schedule,
+              on_push: config.scanners.on_push,
+              modules: config.scanners.modules,
             },
           },
         };
@@ -228,6 +256,36 @@ export class WebDashboard {
       }
     });
 
+    // ── Update Integration Config ──────────────────────────────────────
+    this.app.post<{
+      Params: { name: string };
+    }>("/api/v1/integrations/:name/config", async (req) => {
+      try {
+        const { name } = req.params;
+        const body = req.body as Record<string, unknown>;
+        updateIntegrationConfig(this.configPath, name, body);
+        logger.info({ name, fields: Object.keys(body) }, "integration config updated via web");
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: String(err) };
+      }
+    });
+
+    // ── Update Scanner Config ────────────────────────────────────────────
+    this.app.post<{
+      Params: { name: string };
+    }>("/api/v1/scanners/:name/config", async (req) => {
+      try {
+        const { name } = req.params;
+        const body = req.body as Record<string, unknown>;
+        updateScannerConfig(this.configPath, name, body);
+        logger.info({ name, fields: Object.keys(body) }, "scanner config updated via web");
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: String(err) };
+      }
+    });
+
     // ── Health Check ────────────────────────────────────────────────────
     this.app.get("/health", async () => ({ status: "ok" }));
 
@@ -249,6 +307,15 @@ export class WebDashboard {
     if (this.app) {
       await this.app.close();
       this.app = null;
+    }
+  }
+
+  private getIntegrationPort(): number {
+    try {
+      const config = loadConfig(this.configPath);
+      return config.integrations.server_port;
+    } catch {
+      return 3100;
     }
   }
 }

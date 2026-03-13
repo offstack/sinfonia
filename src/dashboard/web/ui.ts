@@ -200,6 +200,7 @@ export function dashboardHtml(projectName: string, projectSlug: string): string 
     <div class="main-header">
       <h2>Scanners</h2>
     </div>
+    <p style="color:var(--text-dim);margin-bottom:16px;font-size:12px">Scanners use Claude Code CLI to analyze your codebase. Toggle modules on/off and configure their settings below. Changes are saved to sinfonia.yaml and hot-reloaded.</p>
     <div id="t-scanners-page"><div class="empty">Loading...</div></div>
   </div>
 
@@ -208,7 +209,33 @@ export function dashboardHtml(projectName: string, projectSlug: string): string 
     <div class="main-header">
       <h2>Integrations</h2>
     </div>
+    <p style="color:var(--text-dim);margin-bottom:16px;font-size:12px">Integrations receive webhooks from external services and create Linear issues. Configure each integration below, then point the external service to the webhook URL shown.</p>
     <div id="t-integrations-page"><div class="empty">Loading...</div></div>
+
+    <div class="card" style="margin-top:24px">
+      <div class="card-title">Generic Webhook API</div>
+      <p style="color:var(--text-dim);margin-bottom:12px;font-size:12px">Send any JSON payload to the generic endpoint — no signature required.</p>
+      <pre style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:11px;overflow-x:auto;color:var(--cyan)">curl -X POST http://localhost:<span id="generic-port">3100</span>/webhooks/generic \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "title": "Issue title",
+    "description": "Details...",
+    "severity": "high",
+    "file": "src/server.ts",
+    "type": "bug"
+  }'</pre>
+      <table style="margin-top:12px;font-size:12px">
+        <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>title</td><td>string</td><td>Yes</td><td>Issue title</td></tr>
+          <tr><td>description</td><td>string</td><td>No</td><td>Detailed description</td></tr>
+          <tr><td>severity</td><td>string</td><td>No</td><td>critical, high, medium, low</td></tr>
+          <tr><td>file</td><td>string</td><td>No</td><td>Related file path</td></tr>
+          <tr><td>line</td><td>number</td><td>No</td><td>Line number</td></tr>
+          <tr><td>type</td><td>string</td><td>No</td><td>security, performance, bug, etc.</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <!-- ═══════ SETTINGS ═══════ -->
@@ -332,6 +359,7 @@ document.querySelectorAll('.nav-item').forEach(function(btn) {
     currentPage = page;
     location.hash = page;
     if (page === 'settings') loadSettings();
+    if (page === 'scanners' || page === 'integrations') { configDataLoaded = false; loadConfigData(); }
   });
 });
 
@@ -412,44 +440,126 @@ async function refresh() {
       }).join('');
     }
 
-    // Scanners page
-    renderScanners(d.scanners || []);
+    // Update generic webhook port display
+    if (d.integration_port) {
+      var gp = document.getElementById('generic-port');
+      if (gp) gp.textContent = d.integration_port;
+    }
 
-    // Integrations page
-    renderIntegrations(d.integrations || []);
+    // Only render scanner/integration cards if config is loaded
+    if (!configDataLoaded) loadConfigData();
 
   } catch(e) {
     console.error('Refresh failed:', e);
   }
 }
 
-function renderScanners(scanners) {
+var configDataLoaded = false;
+async function loadConfigData() {
+  configDataLoaded = true;
+  try {
+    var cr = await fetch('/api/v1/config');
+    var cd = await cr.json();
+    if (!cd.success || !cd.config) return;
+    renderScannersPage(cd.config.scanners || {});
+    renderIntegrationsPage(cd.config.integrations || {}, cd.config);
+  } catch(e) { console.error('Config load failed:', e); }
+}
+
+function renderScannersPage(scannersConfig) {
   var el = document.getElementById('t-scanners-page');
-  if (scanners.length === 0) {
-    el.innerHTML = '<div class="empty">No scanners configured</div>';
+  var mods = scannersConfig.modules || {};
+  var names = Object.keys(mods);
+  if (names.length === 0) {
+    el.innerHTML = '<div class="empty">No scanners configured. Add scanner modules to sinfonia.yaml.</div>';
     return;
   }
-  el.innerHTML = scanners.map(function(s) {
-    var checked = s.enabled ? 'checked' : '';
-    return '<div class="toggle-row">'
-      + '<div><span class="toggle-name">' + esc(s.name) + '</span></div>'
-      + '<label class="switch"><input type="checkbox" ' + checked + ' onchange="toggleScanner(\\'' + esc(s.name) + '\\', this.checked)"><span class="slider"></span></label>'
-      + '</div>';
+  var descs = { security: 'SQL injection, XSS, hardcoded secrets, SSRF', performance: 'N+1 queries, blocking ops, memory leaks', dry: 'Duplicated logic, copy-pasted functions', simplify: 'High complexity, deep nesting, dead code', custom: 'User-defined prompt-based scanner' };
+  el.innerHTML = names.map(function(name) {
+    var m = mods[name];
+    var checked = m.enabled ? 'checked' : '';
+    var desc = descs[name] || '';
+    var inc = (m.include || []).join(', ');
+    var html = '<div class="card">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
+    html += '<div><span class="card-title" style="margin:0">' + esc(name) + '</span>';
+    if (desc) html += '<span style="color:var(--text-dim);font-size:11px;margin-left:8px">' + esc(desc) + '</span>';
+    html += '</div>';
+    html += '<label class="switch"><input type="checkbox" ' + checked + ' onchange="toggleScanner(\\'' + esc(name) + '\\', this.checked)"><span class="slider"></span></label>';
+    html += '</div>';
+    // Config fields
+    html += '<div class="form-row">';
+    html += '<div class="form-group"><label class="form-label">Include patterns</label><input class="form-input" id="sc-' + name + '-include" value="' + esc(inc) + '" placeholder="src/**/*.ts"></div>';
+    if (name === 'security') {
+      html += '<div class="form-group"><label class="form-label">Severity Threshold</label><select class="form-input" id="sc-' + name + '-severity"><option' + (m.severity_threshold==='critical'?' selected':'') + '>critical</option><option' + (m.severity_threshold==='high'?' selected':'') + '>high</option><option' + (!m.severity_threshold||m.severity_threshold==='medium'?' selected':'') + '>medium</option><option' + (m.severity_threshold==='low'?' selected':'') + '>low</option></select></div>';
+    }
+    if (name === 'dry') {
+      html += '<div class="form-group"><label class="form-label">Min Duplicate Lines</label><input class="form-input" id="sc-' + name + '-mindup" type="number" value="' + (m.min_duplicate_lines||10) + '" min="3"></div>';
+    }
+    if (name === 'simplify') {
+      html += '<div class="form-group"><label class="form-label">Max Complexity</label><input class="form-input" id="sc-' + name + '-maxcx" type="number" value="' + (m.max_complexity||15) + '" min="1"></div>';
+    }
+    if (name === 'custom') {
+      html += '<div class="form-group"><label class="form-label">Prompt File</label><input class="form-input" id="sc-' + name + '-prompt" value="' + esc(m.prompt_file||'') + '" placeholder="./my-scan.md"></div>';
+    }
+    html += '</div>';
+    html += '<button class="btn btn-sm" onclick="saveScannerConfig(\\'' + esc(name) + '\\')">Save</button>';
+    html += '</div>';
+    return html;
   }).join('');
 }
 
-function renderIntegrations(integrations) {
+function renderIntegrationsPage(intConfig, fullConfig) {
   var el = document.getElementById('t-integrations-page');
-  if (integrations.length === 0) {
-    el.innerHTML = '<div class="empty">No integrations configured</div>';
+  var sources = intConfig.sources || {};
+  var port = intConfig.server_port || 3100;
+  var names = Object.keys(sources);
+  if (names.length === 0) {
+    el.innerHTML = '<div class="empty">No integrations configured. Add sources to sinfonia.yaml.</div>';
     return;
   }
-  el.innerHTML = integrations.map(function(i) {
-    var checked = i.enabled ? 'checked' : '';
-    return '<div class="toggle-row">'
-      + '<div><span class="toggle-name">' + esc(i.name) + '</span></div>'
-      + '<label class="switch"><input type="checkbox" ' + checked + ' onchange="toggleIntegration(\\'' + esc(i.name) + '\\', this.checked)"><span class="slider"></span></label>'
-      + '</div>';
+  var descs = { sentry: 'Receives Sentry error webhooks', github: 'Receives GitHub Dependabot + CI webhooks', slack: 'Receives Slack event webhooks', generic: 'Accepts any JSON payload (no signature needed)' };
+  var headers = { sentry: 'sentry-hook-signature', github: 'x-hub-signature-256', slack: 'x-slack-signature' };
+  el.innerHTML = names.map(function(name) {
+    var src = sources[name];
+    var checked = src.enabled ? 'checked' : '';
+    var desc = descs[name] || '';
+    var webhookUrl = 'http://&lt;your-server&gt;:' + port + '/webhooks/' + name;
+    var html = '<div class="card">';
+    // Header row with toggle
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
+    html += '<div><span class="card-title" style="margin:0">' + esc(name) + '</span>';
+    if (desc) html += '<span style="color:var(--text-dim);font-size:11px;margin-left:8px">' + esc(desc) + '</span>';
+    html += '</div>';
+    html += '<label class="switch"><input type="checkbox" ' + checked + ' onchange="toggleIntegration(\\'' + esc(name) + '\\', this.checked)"><span class="slider"></span></label>';
+    html += '</div>';
+    // Webhook URL
+    html += '<div class="form-group"><label class="form-label">Webhook URL</label>';
+    html += '<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;color:var(--cyan);user-select:all">' + webhookUrl + '</div>';
+    if (headers[name]) html += '<div style="color:var(--text-dim);font-size:11px;margin-top:4px">Signature header: <code>' + headers[name] + '</code> (HMAC-SHA256)</div>';
+    html += '</div>';
+    // Config fields
+    html += '<div class="form-row">';
+    if (name !== 'generic') {
+      html += '<div class="form-group"><label class="form-label">Webhook Secret</label><input class="form-input" id="int-' + name + '-secret" type="password" value="" placeholder="' + (src.secret_set ? '(secret is set)' : 'Enter webhook secret') + '"></div>';
+    }
+    html += '<div class="form-group"><label class="form-label">Auto-triage</label><select class="form-input" id="int-' + name + '-triage"><option value="false"' + (!src.auto_triage?' selected':'') + '>Off — issues go to Backlog</option><option value="true"' + (src.auto_triage?' selected':'') + '>On — issues go to Todo (auto-fix)</option></select></div>';
+    html += '</div>';
+    // Integration-specific fields
+    if (name === 'sentry') {
+      html += '<div class="form-row">';
+      html += '<div class="form-group"><label class="form-label">Min Occurrences</label><input class="form-input" id="int-sentry-minocc" type="number" value="' + (src.min_occurrences||5) + '" min="1"></div>';
+      html += '<div class="form-group"><label class="form-label">Ignore Environments</label><input class="form-input" id="int-sentry-ignenv" value="' + esc((src.ignore_environments||[]).join(', ')) + '" placeholder="staging, dev"></div>';
+      html += '</div>';
+    }
+    if (name === 'github') {
+      html += '<div class="form-row">';
+      html += '<div class="form-group"><label class="form-label">Events</label><input class="form-input" id="int-github-events" value="' + esc((src.events||[]).join(', ')) + '" placeholder="dependabot_alert"></div>';
+      html += '</div>';
+    }
+    html += '<button class="btn btn-sm" onclick="saveIntegrationConfig(\\'' + esc(name) + '\\')">Save</button>';
+    html += '</div>';
+    return html;
   }).join('');
 }
 
@@ -466,6 +576,49 @@ async function toggleScanner(name, enabled) {
 
 async function toggleIntegration(name, enabled) {
   await apiPost('/api/v1/integrations/' + name + '/toggle', { enabled: enabled });
+}
+
+async function saveScannerConfig(name) {
+  var body = {};
+  var inc = document.getElementById('sc-' + name + '-include');
+  if (inc) {
+    var val = inc.value.trim();
+    body.include = val ? val.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+  }
+  var sev = document.getElementById('sc-' + name + '-severity');
+  if (sev) body.severity_threshold = sev.value;
+  var mindup = document.getElementById('sc-' + name + '-mindup');
+  if (mindup) body.min_duplicate_lines = parseInt(mindup.value) || 10;
+  var maxcx = document.getElementById('sc-' + name + '-maxcx');
+  if (maxcx) body.max_complexity = parseInt(maxcx.value) || 15;
+  var prompt = document.getElementById('sc-' + name + '-prompt');
+  if (prompt) body.prompt_file = prompt.value.trim();
+  var res = await apiPost('/api/v1/scanners/' + name + '/config', body);
+  if (res.success) { configDataLoaded = false; loadConfigData(); }
+}
+
+async function saveIntegrationConfig(name) {
+  var body = {};
+  var secret = document.getElementById('int-' + name + '-secret');
+  if (secret && secret.value) body.secret = secret.value;
+  var triage = document.getElementById('int-' + name + '-triage');
+  if (triage) body.auto_triage = triage.value === 'true';
+  // Sentry-specific
+  var minocc = document.getElementById('int-sentry-minocc');
+  if (minocc) body.min_occurrences = parseInt(minocc.value) || 5;
+  var ignenv = document.getElementById('int-sentry-ignenv');
+  if (ignenv) {
+    var val = ignenv.value.trim();
+    body.ignore_environments = val ? val.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+  }
+  // GitHub-specific
+  var events = document.getElementById('int-github-events');
+  if (events) {
+    var val = events.value.trim();
+    body.events = val ? val.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+  }
+  var res = await apiPost('/api/v1/integrations/' + name + '/config', body);
+  if (res.success) { configDataLoaded = false; loadConfigData(); }
 }
 
 async function saveStateFlow() {

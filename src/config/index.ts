@@ -18,4 +18,7 @@ export {
   updateStateFlow,
   switchProject,
   updateOrchestratorSettings,
+  updateIntegrationConfig,
+  updateScannerConfig,
+  updateIntegrationPort,
 } from "./mutator.js";

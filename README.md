@@ -108,14 +108,15 @@ Sinfonia ships with **two dashboard options** — pick whichever fits your workf
 | **Live stats** | ✅ Agents, tokens, runtime, retries | ✅ Agents, tokens, runtime, retries |
 | **Running agents** | ✅ Table with events | ✅ Table with events + token breakdown |
 | **Retry queue** | ✅ | ✅ |
-| **Toggle scanners** | — | ✅ Toggle switches |
-| **Toggle integrations** | — | ✅ Toggle switches |
+| **Service info** | ✅ Webhook port, active scanners | ✅ Webhook URLs, integration port |
+| **Configure scanners** | — | ✅ Toggle, include patterns, severity, thresholds |
+| **Configure integrations** | — | ✅ Toggle, webhook URLs, secrets, auto-triage, filters |
 | **Settings editor** | — | ✅ State flow, polling, max agents |
 | **Switch projects** | — | ✅ Project selector with state list |
 
 ### TUI Dashboard (default)
 
-The terminal dashboard runs out of the box — no browser needed. It refreshes every second with real-time agent activity displayed as human-readable events:
+The terminal dashboard runs out of the box — no browser needed. It refreshes every second with real-time agent activity displayed as human-readable events, plus service info at a glance:
 
 ```
  SINFONIA STATUS
@@ -123,6 +124,8 @@ The terminal dashboard runs out of the box — no browser needed. It refreshes e
   Runtime: 12m 34s
   Tokens: in 45K | out 12K | total 57K
   Completed: 3 issues
+  Services: webhooks :3100
+  Scanners: security, performance
 
   Running
   ID          STAGE         AGE / TURN   TOKENS       SESSION          EVENT
@@ -147,13 +150,13 @@ npx sinfonia start --web
 
 - **Overview** — Live stats cards, running agents table with real-time events, retry queue
 - **Agents** — Detailed view with token breakdowns (in/out), session IDs, retry countdowns, completed list
-- **Scanners** — Toggle switches to enable/disable scanner modules directly from the browser
-- **Integrations** — Toggle switches to enable/disable integration sources
+- **Scanners** — Full setup per scanner: toggle on/off, include patterns, severity threshold, min duplicate lines, max complexity, prompt file. Each scanner gets a card with its own form.
+- **Integrations** — Full setup per integration: toggle on/off, webhook URL shown for copy-paste, secret input, auto-triage mode, plus type-specific fields (min occurrences, ignored environments, event filters). Also includes a **Generic Webhook API** reference card with a ready-to-use `curl` example and field documentation.
 - **Settings** — Configure state flow transitions, orchestrator settings (polling interval, max agents), switch Linear projects with available team states
 
 All management actions write to `sinfonia.yaml` and are hot-reloaded automatically — no restart needed.
 
-> **Tip:** Use the CLI for quick monitoring, and the web dashboard when you need to manage scanners, integrations, or settings without editing YAML by hand.
+> **Tip:** Use the CLI for quick monitoring, and the web dashboard when you need to set up scanners, configure integrations, or tweak settings — no YAML editing required.
 
 ### Completion Comments
 
@@ -190,29 +193,195 @@ No persistent database. State recovers from Linear + filesystem on restart.
 
 ### The Scanners
 
-Automated code analysis that creates Linear issues:
+Scanners use **Claude Code CLI** to analyze your codebase semantically — not just syntactically like traditional linters. Each scanner sends code chunks to Claude with a specialized prompt and collects structured findings.
 
 | Scanner | What It Finds |
 |---------|--------------|
-| **security** | SQL injection, XSS, hardcoded secrets, SSRF, path traversal |
-| **performance** | N+1 queries, missing memoization, blocking operations, memory leaks |
-| **dry** | Duplicated logic, copy-pasted functions, repeated patterns |
-| **simplify** | High complexity, deep nesting, dead code, long parameter lists |
+| **security** | SQL injection, XSS, hardcoded secrets, SSRF, path traversal, insecure crypto |
+| **performance** | N+1 queries, missing memoization, blocking operations, memory leaks, unnecessary re-renders |
+| **dry** | Duplicated logic, copy-pasted functions, repeated error handling, repeated validation patterns |
+| **simplify** | High complexity, deep nesting, dead code, long parameter lists, overly abstract code |
 | **custom** | Anything — write your own prompt in a markdown file |
 
-Scanners use Claude to analyze code semantically, not just syntactically. They find issues that traditional linters miss.
+**How it works under the hood:**
+
+1. Sinfonia collects files matching the module's `include`/`exclude` globs
+2. Files are grouped into chunks (max 5000 lines) to fit Claude's context window
+3. Each chunk is sent to `claude -p "analyze this code for..." --output-format json --max-turns 1`
+4. Claude returns a JSON array of findings with file, line, severity, title, description
+5. Findings are **deduplicated** against existing Linear issues (via fingerprint labels — no database needed)
+6. New findings become Linear issues in the `Backlog` state with labels for tracing
+
+**Triggering scanners:**
+
+```bash
+# Manually — run specific scanners
+sinfonia scan -m security,performance
+
+# Manually — scan specific files
+sinfonia scan -m security -f "src/api/**/*.ts"
+
+# Automatically — cron schedule (configured in sinfonia.yaml)
+# Default: "0 2 * * *" (nightly at 2 AM)
+
+# Automatically — on every git push (if on_push: true)
+```
+
+**Example finding created in Linear:**
+
+```
+Title:  [security] Hardcoded AWS secret key in deploy config
+State:  Backlog
+Labels: auto-detected, fp:a1b2c3d4e5f6g7h8, source:scanner:security, severity:high
+
+Description:
+  ## Security Finding
+  **Severity:** high
+  **File:** `src/config/deploy.ts:8`
+
+  AWS_SECRET_ACCESS_KEY is hardcoded in the deployment configuration.
+  This credential should be loaded from environment variables or a
+  secrets manager to prevent exposure in version control.
+```
+
+**Deduplication:** Each finding gets a deterministic fingerprint (`sha256(type + file + title)`). This is stored as a `fp:xxxx` label on the Linear issue. On the next scan, Sinfonia checks for existing fingerprints and also does fuzzy title matching — so the same issue is never created twice. If a previous issue was marked Done and the same code problem reappears, it creates a new issue (regression).
 
 ### The Integrations
 
-Webhook receivers that turn external events into Linear issues:
+Integrations are **webhook receivers** — a Fastify HTTP server that accepts events from external services and converts them into Linear issues.
 
-| Integration | Source | What It Captures |
-|-------------|--------|-----------------|
-| **Sentry** | Runtime errors | Stack traces, breadcrumbs, occurrence count, environment |
-| **GitHub** | Dependabot, CI | Vulnerability details, patched versions, check run failures |
-| **Generic** | Any webhook | Accepts any JSON payload with title/description/severity |
+| Integration | Source | Webhook Endpoint | What It Captures |
+|-------------|--------|-----------------|-----------------|
+| **Sentry** | Runtime errors | `POST /webhooks/sentry` | Stack traces, breadcrumbs, occurrence count, environment |
+| **GitHub** | Dependabot, CI | `POST /webhooks/github` | Dependency vulnerabilities (CVE), patched versions, CI check failures |
+| **Generic** | Any webhook | `POST /webhooks/generic` | Any JSON payload with title/description/severity |
 
-Each integration has an `auto_triage` flag — when enabled, issues go directly to Todo (and Sinfonia fixes them immediately). When disabled, they go to Backlog for human review first.
+**How it works:**
+
+1. External service sends a webhook POST to `http://your-server:3100/webhooks/{name}`
+2. Sinfonia verifies the HMAC signature (prevents unauthorized requests)
+3. Payload is transformed into a standardized `Finding` object
+4. Finding is deduplicated against existing Linear issues
+5. A new Linear issue is created with full context
+
+**The `auto_triage` flag** controls where issues land:
+
+- `auto_triage: false` (default) — Issues go to **Backlog**. A human reviews them and moves to Todo when ready to fix.
+- `auto_triage: true` — Issues go directly to **Todo**. The orchestrator picks them up immediately and dispatches Claude Code to fix them.
+
+> **Tip:** Use `auto_triage: true` for low-risk, high-confidence fixes (e.g., known dependency patches). Use `false` for production errors that need human judgment first.
+
+---
+
+#### Setting Up Sentry Integration
+
+1. **In Sinfonia** — enable and set your secret:
+
+```yaml
+integrations:
+  server_port: 3100
+  sources:
+    sentry:
+      enabled: true
+      secret: $SENTRY_WEBHOOK_SECRET    # env var or literal
+      auto_triage: false                 # human review first
+      min_occurrences: 5                 # ignore errors < 5 occurrences
+      ignore_environments: [staging]     # skip staging errors
+      ignore_patterns: []                # regex patterns to ignore
+```
+
+2. **In Sentry** — go to **Settings > Integrations > Webhooks** (or **Settings > Developer Settings > Webhooks**):
+   - **Callback URL:** `http://your-server:3100/webhooks/sentry`
+   - **Secret:** same value as `SENTRY_WEBHOOK_SECRET`
+   - **Events:** check `issue` (triggers on new issues and regressions)
+
+3. **Start Sinfonia** — the webhook server starts automatically:
+```bash
+sinfonia start
+# Integration server listening on :3100
+```
+
+When Sentry fires a webhook, Sinfonia verifies the `sentry-hook-signature` header (HMAC-SHA256), extracts the error details (stack trace, breadcrumbs, occurrence count), and creates a Linear issue with full context.
+
+#### Setting Up GitHub Integration
+
+1. **In Sinfonia** — enable and set your secret:
+
+```yaml
+integrations:
+  sources:
+    github:
+      enabled: true
+      secret: $GITHUB_WEBHOOK_SECRET
+      events:
+        - dependabot_alert    # security vulnerabilities
+```
+
+2. **In GitHub** — go to your repo's **Settings > Webhooks > Add webhook**:
+   - **Payload URL:** `http://your-server:3100/webhooks/github`
+   - **Content type:** `application/json`
+   - **Secret:** same value as `GITHUB_WEBHOOK_SECRET`
+   - **Events:** select "Dependabot alerts" and/or "Check runs"
+
+Sinfonia verifies the `x-hub-signature-256` header (HMAC-SHA256). For Dependabot alerts, it creates issues with CVE details, affected package, vulnerable version range, and fix version. For CI check failures, it creates issues with the check output and a link to GitHub.
+
+#### Setting Up the Generic Webhook
+
+The generic integration accepts **any JSON payload** — no signature verification required. Use it for internal tools, custom alerting systems, or services without built-in support.
+
+```yaml
+integrations:
+  sources:
+    generic:
+      enabled: true
+```
+
+**Send a webhook:**
+
+```bash
+curl -X POST http://localhost:3100/webhooks/generic \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Memory usage exceeding 80% on prod-api-3",
+    "description": "RSS has been above 80% for the last 15 minutes. Consider scaling or investigating leak.",
+    "severity": "high",
+    "file": "src/server.ts",
+    "type": "performance"
+  }'
+```
+
+**Accepted fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `title` | string | Yes | Issue title |
+| `description` | string | No | Detailed description |
+| `severity` | string | No | `critical`, `high`, `medium`, or `low` (default: `medium`) |
+| `file` | string | No | Related file path |
+| `line` | number | No | Line number |
+| `type` | string | No | `security`, `performance`, `bug`, `simplify`, etc. (default: `bug`) |
+
+---
+
+#### Managing via Web Dashboard vs CLI
+
+The **web dashboard** lets you fully configure scanners and integrations without touching YAML:
+
+- **Scanners page** — toggle on/off, edit include patterns, severity thresholds, and module-specific settings (min duplicate lines, max complexity, prompt file)
+- **Integrations page** — toggle on/off, view the webhook URL to configure in the external service, set the webhook secret, choose auto-triage mode, and configure filters (min occurrences, ignored environments, event types)
+
+The **CLI** provides enable/disable commands:
+
+```bash
+sinfonia scanners enable security
+sinfonia scanners disable dry
+sinfonia integrations enable sentry
+sinfonia integrations disable slack
+```
+
+Both the web dashboard and CLI write to `sinfonia.yaml`, which is hot-reloaded automatically.
+
+> **Note:** After configuring an integration in the dashboard, you still need to point the external service (Sentry, GitHub, etc.) to the webhook URL shown on the Integrations page.
 
 ## Configuration
 

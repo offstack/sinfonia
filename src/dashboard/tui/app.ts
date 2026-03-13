@@ -34,7 +34,13 @@ function padLeft(s: string, len: number): string {
   return s.length >= len ? s.slice(0, len) : " ".repeat(len - s.length) + s;
 }
 
-export function renderDashboard(snapshot: OrchestratorSnapshot): string {
+export interface TuiContext {
+  integrationPort?: number;
+  scannersEnabled?: string[];
+  webPort?: number;
+}
+
+export function renderDashboard(snapshot: OrchestratorSnapshot, ctx?: TuiContext): string {
   const lines: string[] = [];
   const totalTokens = snapshot.totalTokens.input + snapshot.totalTokens.output;
 
@@ -46,6 +52,20 @@ export function renderDashboard(snapshot: OrchestratorSnapshot): string {
     `${BOLD}  Tokens:${RESET} in ${formatTokens(snapshot.totalTokens.input)} | out ${formatTokens(snapshot.totalTokens.output)} | total ${formatTokens(totalTokens)}`,
   );
   lines.push(`${BOLD}  Completed:${RESET} ${snapshot.completed.length} issues`);
+
+  // Services info
+  if (ctx) {
+    const parts: string[] = [];
+    if (ctx.integrationPort) parts.push(`webhooks :${ctx.integrationPort}`);
+    if (ctx.webPort) parts.push(`dashboard :${ctx.webPort}`);
+    if (parts.length > 0) {
+      lines.push(`${BOLD}  Services:${RESET} ${parts.join("  |  ")}`);
+    }
+    if (ctx.scannersEnabled && ctx.scannersEnabled.length > 0) {
+      lines.push(`${BOLD}  Scanners:${RESET} ${ctx.scannersEnabled.join(", ")}`);
+    }
+  }
+
   lines.push("");
 
   // Running table
