@@ -140,7 +140,8 @@ export class Orchestrator {
 
       for (const issue of toDispatch) {
         this.dispatchIssue(issue).catch((err) => {
-          logger.error({ err, issue: issue.identifier }, "dispatch failed");
+          logger.error({ err, issue: issue.identifier }, "dispatch failed, releasing claim");
+          this.state.release(issue.id);
         });
       }
 
@@ -184,7 +185,7 @@ export class Orchestrator {
       logger.info({ issueId, identifier: session.issueIdentifier }, "issue reached terminal state");
       this.stopFlags.set(issueId, true);
       this.state.markCompleted(issueId);
-      this.workspace.remove(this.workspace.getWorkspacePath(session.issueIdentifier));
+      await this.workspace.remove(this.workspace.getWorkspacePath(session.issueIdentifier));
     }
 
     // Update state changes
@@ -203,6 +204,15 @@ export class Orchestrator {
     this.emit("dispatch", { identifier: issue.identifier, state: issue.state });
 
     try {
+      // Move issue to "In Progress" in tracker (non-fatal if it fails)
+      if (issue.state.toLowerCase() !== "in progress") {
+        try {
+          await this.tracker.updateIssueState(issue.id, "In Progress");
+        } catch (err) {
+          logger.warn({ err, issue: issue.identifier }, "failed to transition issue to In Progress");
+        }
+      }
+
       // Create/reuse workspace
       const wsPath = await this.workspace.createForIssue(issue);
 
@@ -258,8 +268,17 @@ export class Orchestrator {
 
       if (result.outcome === "succeeded") {
         logger.info({ issue: issue.identifier, tokens: result.tokens }, "agent succeeded");
-        // Schedule continuation retry to check if issue is still active
-        this.scheduleRetry(issue.id, issue.identifier, 1, true);
+
+        // Move issue to done_state (e.g. "Ready for Review" or "Done")
+        const doneState = this.config.orchestrator.done_state;
+        try {
+          await this.tracker.updateIssueState(issue.id, doneState);
+          logger.info({ issue: issue.identifier, state: doneState }, "issue transitioned to done state");
+        } catch (err) {
+          logger.warn({ err, issue: issue.identifier, state: doneState }, "failed to transition issue to done state");
+        }
+
+        this.state.markCompleted(issue.id);
       } else {
         logger.warn({ issue: issue.identifier, outcome: result.outcome, error: result.error }, "agent ended");
         this.scheduleRetry(issue.id, issue.identifier, attempt, false, result.error);
@@ -285,9 +304,17 @@ export class Orchestrator {
     error?: string,
   ): void {
     const MAX_RETRY_ATTEMPTS = 10;
-    if (!isContinuation && attempt > MAX_RETRY_ATTEMPTS) {
-      logger.warn({ issueId, identifier: issueIdentifier, attempt }, "max retry attempts reached, releasing issue");
-      this.state.release(issueId);
+    const MAX_CONTINUATION_ATTEMPTS = 3;
+    const maxAttempts = isContinuation ? MAX_CONTINUATION_ATTEMPTS : MAX_RETRY_ATTEMPTS;
+
+    if (attempt > maxAttempts) {
+      if (isContinuation) {
+        logger.info({ issueId, identifier: issueIdentifier, attempt }, "max continuations reached, marking completed");
+        this.state.markCompleted(issueId);
+      } else {
+        logger.warn({ issueId, identifier: issueIdentifier, attempt }, "max retry attempts reached, releasing issue");
+        this.state.release(issueId);
+      }
       return;
     }
 

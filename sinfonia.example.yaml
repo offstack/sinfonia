@@ -22,6 +22,7 @@ orchestrator:
   max_concurrent_by_state:
     todo: 3
     rework: 2
+  done_state: Done          # Linear state to transition to when agent succeeds
   retry:
     max_backoff_ms: 300000
 

@@ -2,7 +2,16 @@ import Handlebars from "handlebars";
 import type { Issue } from "../shared/types.js";
 
 export function renderPrompt(template: string, issue: Issue, isContinuation: boolean): string {
-  const compiled = Handlebars.compile(template, { noEscape: true });
+  let compiled: ReturnType<typeof Handlebars.compile>;
+  try {
+    compiled = Handlebars.compile(template, { noEscape: true });
+  } catch {
+    // Fallback: use template as-is with simple substitution
+    return template
+      .replace(/\{\{issue\.identifier\}\}/g, issue.identifier)
+      .replace(/\{\{issue\.title\}\}/g, issue.title)
+      .replace(/\{\{issue\.description\}\}/g, issue.description);
+  }
 
   const context = {
     issue: {

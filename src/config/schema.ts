@@ -12,6 +12,7 @@ const orchestratorSchema = z.object({
   polling_interval_ms: z.number().int().positive().default(30000),
   max_concurrent_agents: z.number().int().positive().default(5),
   max_concurrent_by_state: z.record(z.string(), z.number().int().positive()).default({}),
+  done_state: z.string().default("Done"),
   retry: z.object({
     max_backoff_ms: z.number().int().positive().default(300000),
   }).default({}),

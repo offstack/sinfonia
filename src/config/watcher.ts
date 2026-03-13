@@ -49,7 +49,11 @@ export class ConfigWatcher {
       const newConfig = loadConfig(this.configPath);
       this.currentConfig = newConfig;
       for (const listener of this.listeners) {
-        listener(newConfig);
+        try {
+          listener(newConfig);
+        } catch (listenerErr) {
+          logger.error({ err: listenerErr }, "config change listener threw");
+        }
       }
       logger.info("config reloaded successfully");
       return true;

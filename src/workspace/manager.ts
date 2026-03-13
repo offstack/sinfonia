@@ -42,7 +42,7 @@ export class WorkspaceManager {
       );
       if (!hookResult.success) {
         logger.error({ issue: issue.identifier }, "after_create hook failed, aborting workspace");
-        this.remove(wsPath);
+        await this.remove(wsPath);
         throw new Error(`after_create hook failed for ${issue.identifier}: ${hookResult.stderr}`);
       }
     }
@@ -72,14 +72,18 @@ export class WorkspaceManager {
     );
   }
 
-  remove(wsPath: string): void {
+  async remove(wsPath: string): Promise<void> {
     if (!existsSync(wsPath)) return;
 
     // Run before_remove hook (non-fatal)
-    runHook(this.config.hooks.before_remove, wsPath, this.config.hooks_timeout_ms, "before_remove").catch(() => {});
+    try {
+      await runHook(this.config.hooks.before_remove, wsPath, this.config.hooks_timeout_ms, "before_remove");
+    } catch {
+      logger.warn({ path: wsPath }, "before_remove hook failed, proceeding with removal");
+    }
 
     if (this.config.strategy === "worktree") {
-      this.removeWorktree(wsPath);
+      await this.removeWorktree(wsPath);
     } else {
       rmSync(wsPath, { recursive: true, force: true });
     }
@@ -129,12 +133,10 @@ export class WorkspaceManager {
     }
   }
 
-  private removeWorktree(wsPath: string): void {
+  private async removeWorktree(wsPath: string): Promise<void> {
     try {
       const git = simpleGit(this.repoRoot);
-      git.raw(["worktree", "remove", "--force", wsPath]).catch(() => {
-        rmSync(wsPath, { recursive: true, force: true });
-      });
+      await git.raw(["worktree", "remove", "--force", wsPath]);
     } catch {
       rmSync(wsPath, { recursive: true, force: true });
     }
