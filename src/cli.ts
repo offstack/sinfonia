@@ -10,6 +10,9 @@ import { renderDashboard } from "./dashboard/index.js";
 import { createLogger } from "./shared/logger.js";
 
 const logger = createLogger("cli");
+const BOLD = "\x1b[1m";
+const DIM = "\x1b[2m";
+const RESET = "\x1b[0m";
 
 const program = new Command()
   .name("sinfonia")
@@ -188,6 +191,74 @@ scannersCmd
   .option("-c, --config <path>", "Path to sinfonia.yaml")
   .action((name, opts) => {
     toggleScanner(opts.config, name, false);
+  });
+
+// ── sinfonia projects ────────────────────────────────────────────────────
+
+const projectsCmd = program
+  .command("projects")
+  .description("Manage Linear project selection");
+
+projectsCmd
+  .command("list")
+  .description("List available Linear teams/projects")
+  .option("-c, --config <path>", "Path to sinfonia.yaml")
+  .action(async (opts) => {
+    const apiKey = process.env.LINEAR_API_KEY;
+    if (!apiKey) {
+      console.error("LINEAR_API_KEY environment variable is required.");
+      process.exit(1);
+    }
+
+    const { LinearClient } = await import("./tracker/index.js");
+    const client = new LinearClient({
+      kind: "linear",
+      api_key: apiKey,
+      project_slug: "",
+      active_states: [],
+    });
+
+    const teams = await client.listTeams();
+    if (teams.length === 0) {
+      console.log("No teams found in your Linear workspace.");
+      return;
+    }
+
+    console.log("\nAvailable Linear projects:\n");
+    for (const team of teams) {
+      const states = team.states.map((s) => s.name).join(", ");
+      console.log(`  ${BOLD}${team.key}${RESET}  ${team.name}`);
+      console.log(`  ${DIM}States: ${states}${RESET}`);
+      console.log();
+    }
+
+    // Check if config exists, show current selection
+    try {
+      const configPath = resolveConfigPath(opts.config);
+      const config = loadConfig(configPath);
+      console.log(`Currently configured: ${BOLD}${config.tracker.project_slug}${RESET}`);
+      console.log(`To switch: ${DIM}sinfonia projects use <SLUG>${RESET}\n`);
+    } catch {
+      console.log(`To configure: ${DIM}sinfonia init --slug <SLUG>${RESET}\n`);
+    }
+  });
+
+projectsCmd
+  .command("use <slug>")
+  .description("Switch to a different Linear project")
+  .option("-c, --config <path>", "Path to sinfonia.yaml")
+  .action((slug, opts) => {
+    const configPath = resolveConfigPath(opts.config);
+    const raw = readFileSync(configPath, "utf-8");
+    const parsed = parseYaml(raw) as Record<string, unknown>;
+
+    const tracker = (parsed.tracker ?? {}) as Record<string, unknown>;
+    tracker.project_slug = slug;
+    parsed.tracker = tracker;
+
+    writeFileSync(configPath, stringifyYaml(parsed));
+    console.log(`Switched to Linear project: ${BOLD}${slug}${RESET}`);
+    console.log("Restart Sinfonia for changes to take effect.");
   });
 
 // ── sinfonia init ───────────────────────────────────────────────────────

@@ -65,8 +65,17 @@ export class Sinfonia {
 
     // Start web dashboard if requested
     if (this.options.web && this.orchestrator) {
-      this.webDashboard = new WebDashboard(this.orchestrator, config.dashboard.web_port);
+      this.webDashboard = new WebDashboard({
+        orchestrator: this.orchestrator,
+        scannerRunner: this.scannerRunner,
+        integrationServer: this.integrationServer,
+        port: config.dashboard.web_port,
+        projectName: config.project.name,
+        projectSlug: config.tracker.project_slug,
+      });
       await this.webDashboard.start();
+      logger.info({ url: `http://localhost:${config.dashboard.web_port}` }, "Web dashboard available");
+      console.log(`\n  \x1b[1m\x1b[36m✦ Web dashboard:\x1b[0m http://localhost:${config.dashboard.web_port}\n`);
     }
 
     // Start TUI if enabled and not in web-only mode

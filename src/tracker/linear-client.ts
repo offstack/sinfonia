@@ -6,6 +6,7 @@ import type {
   LinearGraphQLResponse,
   LinearIssueNode,
   LinearPageInfo,
+  LinearTeam,
 } from "./types.js";
 import { createLogger } from "../shared/logger.js";
 
@@ -257,6 +258,28 @@ export class LinearClient implements TrackerAdapter {
     );
 
     return data.searchIssues.nodes.map((n) => this.toIssue(n));
+  }
+
+  async listTeams(): Promise<LinearTeam[]> {
+    const data = await this.graphql<{
+      teams: { nodes: Array<{ id: string; key: string; name: string; states: { nodes: Array<{ id: string; name: string }> } }> };
+    }>(`query {
+      teams {
+        nodes {
+          id
+          key
+          name
+          states { nodes { id name } }
+        }
+      }
+    }`);
+
+    return data.teams.nodes.map((t) => ({
+      id: t.id,
+      key: t.key,
+      name: t.name,
+      states: t.states.nodes,
+    }));
   }
 
   private toIssue(node: LinearIssueNode): Issue {

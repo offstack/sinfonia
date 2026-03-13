@@ -1,5 +1,12 @@
 import type { Issue } from "../shared/types.js";
 
+export interface LinearTeam {
+  id: string;
+  key: string;
+  name: string;
+  states: Array<{ id: string; name: string }>;
+}
+
 export interface TrackerAdapter {
   fetchCandidateIssues(): Promise<Issue[]>;
   fetchIssueStatesByIds(ids: string[]): Promise<Map<string, string>>;
@@ -7,6 +14,7 @@ export interface TrackerAdapter {
   createComment(issueId: string, body: string): Promise<void>;
   createIssue(input: CreateIssueInput): Promise<Issue>;
   searchIssues(query: string): Promise<Issue[]>;
+  listTeams(): Promise<LinearTeam[]>;
 }
 
 export interface CreateIssueInput {

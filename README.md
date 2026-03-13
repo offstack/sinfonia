@@ -55,7 +55,17 @@ This creates `sinfonia.yaml`. Edit it to set your prompt template and preference
 export LINEAR_API_KEY=lin_api_xxxxxxxxxxxxx
 ```
 
-### 4. Start
+### 4. Choose Your Linear Project
+
+```bash
+# List available Linear teams/projects
+npx sinfonia projects list
+
+# Switch to a specific project
+npx sinfonia projects use MYAPP
+```
+
+### 5. Start
 
 ```bash
 # Full pipeline (orchestrator + scanners + integrations)
@@ -70,6 +80,23 @@ npx sinfonia start --scanners-only
 # With web dashboard instead of TUI
 npx sinfonia start --web
 ```
+
+### Web Dashboard
+
+Launch with `--web` to get a real-time browser dashboard at the configured port (default `3200`):
+
+```bash
+npx sinfonia start --web
+# Open http://localhost:3200
+```
+
+The web dashboard shows:
+- **Live stats** — running agents, completed tasks, total tokens, uptime, retry queue depth
+- **Running agents table** — issue ID, stage, age, turn count, tokens, session, last event
+- **Backoff queue** — pending retries with attempt count and time until next retry
+- **Scanners & integrations** — on/off status for all configured modules
+
+Auto-refreshes every 2 seconds. Use the Refresh Poll button to trigger an immediate Linear sync.
 
 ## How It Works
 
@@ -226,6 +253,10 @@ sinfonia integrations list                      # Show integration status
 sinfonia integrations enable <name>             # Enable an integration
 sinfonia integrations disable <name>            # Disable an integration
 
+# Projects
+sinfonia projects list                          # List Linear teams/projects
+sinfonia projects use <slug>                    # Switch Linear project
+
 # Operations
 sinfonia status                                 # TUI dashboard
 sinfonia status --web                           # Web dashboard
@@ -337,46 +368,6 @@ Dependabot: lodash 4.17.20 has prototype pollution vulnerability
     - Verifies tests pass
     - Creates PR
 ```
-
-## Architecture
-
-```
-sinfonia/
-├── src/
-│   ├── config/           # Zod schema, YAML loader, hot-reload watcher
-│   ├── tracker/          # Linear GraphQL client (pagination, batching)
-│   ├── workspace/        # Git worktrees, path sanitization, lifecycle hooks
-│   ├── agent/            # Claude Code CLI subprocess, session management
-│   ├── orchestrator/     # Polling, dispatch, reconciliation, retry queue
-│   ├── scanners/         # Plugin registry, cron scheduler, 5 modules
-│   ├── integrations/     # Webhook server, Sentry/GitHub/generic handlers
-│   ├── dashboard/        # TUI (ANSI) + Web (Fastify REST API)
-│   └── shared/           # Structured logging, type definitions
-├── sinfonia.example.yaml # Template config
-├── package.json
-└── tsconfig.json
-```
-
-### Key Design Decisions
-
-- **Claude Code CLI, not JSON-RPC** — `claude -p "prompt" --output-format json` is simpler than implementing Codex's app-server protocol
-- **Git worktrees, not clones** — instant, shared `.git` objects, minimal disk
-- **No database** — state recovers from Linear + filesystem (same as Symphony)
-- **Single config file** — `sinfonia.yaml` with hot-reload
-- **Plugin architecture** — add custom scanners or integrations by implementing a simple interface
-- **Fingerprint-based deduplication** — prevents duplicate Linear issues across all sources
-
-### How It Differs From Symphony
-
-| Aspect | Symphony (OpenAI) | Sinfonia |
-|--------|-------------------|----------|
-| Agent | Codex (JSON-RPC protocol) | Claude Code (CLI) |
-| Language | Elixir | TypeScript |
-| Scope | Orchestrator only | Orchestrator + Scanners + Integrations |
-| Scanners | None | 5 built-in + custom |
-| External integrations | None | Sentry, GitHub, Slack, generic |
-| Config management | CLI toggle + YAML + web dashboard | CLI toggle + YAML + web dashboard |
-| Dashboard | Phoenix LiveView TUI | ANSI TUI + REST API |
 
 ## Development
 

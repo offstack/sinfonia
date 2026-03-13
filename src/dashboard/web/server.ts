@@ -1,26 +1,50 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import type { Orchestrator } from "../../orchestrator/index.js";
+import type { ScannerRunner } from "../../scanners/runner.js";
+import type { IntegrationServer } from "../../integrations/server.js";
 import { createLogger } from "../../shared/logger.js";
+import { dashboardHtml } from "./ui.js";
 
 const logger = createLogger("web-dashboard");
 
 export class WebDashboard {
   private app: FastifyInstance | null = null;
   private orchestrator: Orchestrator;
+  private scannerRunner: ScannerRunner | null;
+  private integrationServer: IntegrationServer | null;
   private port: number;
+  private projectName: string;
+  private projectSlug: string;
 
-  constructor(orchestrator: Orchestrator, port: number) {
-    this.orchestrator = orchestrator;
-    this.port = port;
+  constructor(opts: {
+    orchestrator: Orchestrator;
+    scannerRunner?: ScannerRunner | null;
+    integrationServer?: IntegrationServer | null;
+    port: number;
+    projectName: string;
+    projectSlug: string;
+  }) {
+    this.orchestrator = opts.orchestrator;
+    this.scannerRunner = opts.scannerRunner ?? null;
+    this.integrationServer = opts.integrationServer ?? null;
+    this.port = opts.port;
+    this.projectName = opts.projectName;
+    this.projectSlug = opts.projectSlug;
   }
 
   async start(): Promise<void> {
     this.app = Fastify({ logger: false });
 
-    // State snapshot
+    // Serve the dashboard HTML
+    this.app.get("/", async (_req, reply) => {
+      reply.type("text/html").send(dashboardHtml(this.projectName, this.projectSlug));
+    });
+
+    // State snapshot API
     this.app.get("/api/v1/state", async () => {
       const snap = this.orchestrator.snapshot();
       return {
+        project: { name: this.projectName, slug: this.projectSlug },
         running_sessions: snap.running.map((s) => ({
           session_id: s.sessionId,
           issue_id: s.issueId,
@@ -48,6 +72,8 @@ export class WebDashboard {
         },
         runtime_ms: snap.runtimeMs,
         max_agents: snap.maxAgents,
+        scanners: this.scannerRunner?.listModules() ?? [],
+        integrations: this.integrationServer?.listSources() ?? [],
       };
     });
 
