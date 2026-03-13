@@ -19,7 +19,6 @@ export class LinearClient implements TrackerAdapter {
   private apiKey: string;
   private projectSlug: string;
   private activeStates: string[];
-  private projectId: string | null = null;
   private teamId: string | null = null;
   private stateIdCache = new Map<string, string>();
 
@@ -52,7 +51,7 @@ export class LinearClient implements TrackerAdapter {
   }
 
   private async ensureProjectContext(): Promise<void> {
-    if (this.teamId && this.projectId) return;
+    if (this.teamId) return;
 
     const data = await this.graphql<{
       teams: { nodes: Array<{ id: string; key: string; states: { nodes: Array<{ id: string; name: string }> } }> };
@@ -170,7 +169,7 @@ export class LinearClient implements TrackerAdapter {
     }
 
     await this.graphql(
-      `mutation($id: ID!, $stateId: ID!) {
+      `mutation($id: String!, $stateId: String) {
         issueUpdate(id: $id, input: { stateId: $stateId }) {
           success
         }
@@ -183,7 +182,7 @@ export class LinearClient implements TrackerAdapter {
 
   async createComment(issueId: string, body: string): Promise<void> {
     await this.graphql(
-      `mutation($issueId: ID!, $body: String!) {
+      `mutation($issueId: String, $body: String) {
         commentCreate(input: { issueId: $issueId, body: $body }) {
           success
         }
@@ -222,7 +221,7 @@ export class LinearClient implements TrackerAdapter {
         issue: LinearIssueNode;
       };
     }>(
-      `mutation($teamId: ID!, $title: String!, $description: String!, $priority: Int, $stateId: ID, $labelIds: [String!]) {
+      `mutation($teamId: String!, $title: String!, $description: String!, $priority: Int, $stateId: String, $labelIds: [String!]) {
         issueCreate(input: {
           teamId: $teamId
           title: $title
@@ -274,7 +273,7 @@ export class LinearClient implements TrackerAdapter {
           const created = await this.graphql<{
             issueLabelCreate: { issueLabel: { id: string } };
           }>(
-            `mutation($teamId: ID!, $name: String!) {
+            `mutation($teamId: String, $name: String!) {
               issueLabelCreate(input: { teamId: $teamId, name: $name }) {
                 issueLabel { id }
               }
