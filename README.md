@@ -84,41 +84,76 @@ This updates `project_slug` in your `sinfonia.yaml`. You can switch projects at 
 ### 5. Start
 
 ```bash
-# Full pipeline (orchestrator + scanners + integrations)
+# Terminal dashboard (default)
 npx sinfonia start
 
-# Just the orchestrator (fix issues from Linear)
-npx sinfonia start --orchestrator-only
-
-# Just the scanners (find issues, don't fix them)
-npx sinfonia start --scanners-only
-
-# With web dashboard instead of TUI
+# Browser dashboard at http://localhost:3200
 npx sinfonia start --web
+```
+
+You can also run subsets of the pipeline:
+
+```bash
+npx sinfonia start --orchestrator-only   # Only fix issues from Linear
+npx sinfonia start --scanners-only       # Only find issues, don't fix them
+```
+
+## Dashboards
+
+Sinfonia ships with **two dashboard options** — pick whichever fits your workflow:
+
+| | TUI (Terminal) | Web (Browser) |
+|---|---|---|
+| **Launch** | `sinfonia start` (default) | `sinfonia start --web` |
+| **Live stats** | ✅ Agents, tokens, runtime, retries | ✅ Agents, tokens, runtime, retries |
+| **Running agents** | ✅ Table with events | ✅ Table with events + token breakdown |
+| **Retry queue** | ✅ | ✅ |
+| **Toggle scanners** | — | ✅ Toggle switches |
+| **Toggle integrations** | — | ✅ Toggle switches |
+| **Settings editor** | — | ✅ State flow, polling, max agents |
+| **Switch projects** | — | ✅ Project selector with state list |
+
+### TUI Dashboard (default)
+
+The terminal dashboard runs out of the box — no browser needed. It refreshes every second with real-time agent activity displayed as human-readable events:
+
+```
+ SINFONIA STATUS
+  Agents: 2/5
+  Runtime: 12m 34s
+  Tokens: in 45K | out 12K | total 57K
+  Completed: 3 issues
+
+  Running
+  ID          STAGE         AGE / TURN   TOKENS       SESSION          EVENT
+  * SIN-42    In Progress   3m 12s / 1   8K           a1b2...c3d4      Editing src/api/auth.ts
+  * SIN-45    In Progress   1m 04s / 1   2K           e5f6...g7h8      Running: npm test
+```
+
+```bash
+npx sinfonia start              # TUI is the default
 ```
 
 ### Web Dashboard
 
-Launch with `--web` to get a full-featured browser dashboard at the configured port (default `3200`):
+A full-featured browser dashboard with sidebar navigation, management controls, and settings. Launch it with `--web`:
 
 ```bash
 npx sinfonia start --web
-# Open http://localhost:3200
+# ✦ Web dashboard: http://localhost:3200
 ```
 
 **Pages:**
 
-- **Overview** — Live stats (agents, tokens, runtime), running agents table with real-time events, retry queue
-- **Agents** — Detailed view of all agents with token breakdowns (in/out), session IDs, retry queue with countdowns, completed issues
+- **Overview** — Live stats cards, running agents table with real-time events, retry queue
+- **Agents** — Detailed view with token breakdowns (in/out), session IDs, retry countdowns, completed list
 - **Scanners** — Toggle switches to enable/disable scanner modules directly from the browser
 - **Integrations** — Toggle switches to enable/disable integration sources
-- **Settings** — Configure state flow transitions, orchestrator settings (polling interval, max agents), switch Linear projects with available team states display
+- **Settings** — Configure state flow transitions, orchestrator settings (polling interval, max agents), switch Linear projects with available team states
 
 All management actions write to `sinfonia.yaml` and are hot-reloaded automatically — no restart needed.
 
-### TUI Dashboard
-
-The default terminal dashboard shows real-time agent activity with human-readable events like "Reading src/index.ts", "Running: npm test", "Thinking..." instead of raw event types.
+> **Tip:** Use the CLI for quick monitoring, and the web dashboard when you need to manage scanners, integrations, or settings without editing YAML by hand.
 
 ### Completion Comments
 
