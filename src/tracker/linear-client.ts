@@ -102,7 +102,7 @@ export class LinearClient implements TrackerAdapter {
     while (hasNext) {
       type IssuesResponse = { issues: { nodes: LinearIssueNode[]; pageInfo: LinearPageInfo } };
       const data: IssuesResponse = await this.graphql<IssuesResponse>(
-        `query($teamId: String!, $stateIds: [String!]!, $first: Int!, $after: String) {
+        `query($teamId: ID!, $stateIds: [ID!]!, $first: Int!, $after: String) {
           issues(
             filter: {
               team: { id: { eq: $teamId } }
@@ -170,7 +170,7 @@ export class LinearClient implements TrackerAdapter {
     }
 
     await this.graphql(
-      `mutation($id: String!, $stateId: String!) {
+      `mutation($id: ID!, $stateId: ID!) {
         issueUpdate(id: $id, input: { stateId: $stateId }) {
           success
         }
@@ -183,7 +183,7 @@ export class LinearClient implements TrackerAdapter {
 
   async createComment(issueId: string, body: string): Promise<void> {
     await this.graphql(
-      `mutation($issueId: String!, $body: String!) {
+      `mutation($issueId: ID!, $body: String!) {
         commentCreate(input: { issueId: $issueId, body: $body }) {
           success
         }
@@ -212,7 +212,7 @@ export class LinearClient implements TrackerAdapter {
         issue: LinearIssueNode;
       };
     }>(
-      `mutation($teamId: String!, $title: String!, $description: String!, $priority: Int, $stateId: String) {
+      `mutation($teamId: ID!, $title: String!, $description: String!, $priority: Int, $stateId: ID) {
         issueCreate(input: {
           teamId: $teamId
           title: $title
@@ -243,7 +243,7 @@ export class LinearClient implements TrackerAdapter {
     const data = await this.graphql<{
       searchIssues: { nodes: LinearIssueNode[] };
     }>(
-      `query($teamId: String!, $query: String!) {
+      `query($teamId: ID!, $query: String!) {
         searchIssues(filter: { team: { id: { eq: $teamId } } }, term: $query, first: 20) {
           nodes {
             id identifier title description priority createdAt
