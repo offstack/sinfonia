@@ -45,9 +45,12 @@ export class AgentRunner {
 
     const tokens = { input: 0, output: 0 };
 
-    logger.info({ turn: session.turn, isContinuation }, "starting agent turn");
-
     const args = this.buildArgs(prompt, isContinuation ? session.threadId : undefined);
+
+    logger.info(
+      { turn: session.turn, isContinuation, command: this.config.command, cwd: workspacePath, argsCount: args.length },
+      "starting agent turn",
+    );
 
     const child = spawn(this.config.command, args, {
       cwd: workspacePath,
@@ -73,7 +76,6 @@ export class AgentRunner {
       "-p", prompt,
       "--output-format", "json",
       "--max-turns", String(this.config.max_turns),
-      "--verbose",
     ];
 
     if (this.config.allowed_tools.length > 0) {
@@ -160,11 +162,14 @@ export class AgentRunner {
         }
       });
 
-      // Stderr for diagnostics
+      // Stderr for diagnostics — log at warn so issues are visible
       child.stderr?.on("data", (chunk: Buffer) => {
         lastEventAt = Date.now();
         const text = chunk.toString().trim();
-        if (text) logger.debug({ stderr: text.slice(0, 500) }, "agent stderr");
+        if (text) {
+          logger.warn({ stderr: text.slice(0, 500) }, "agent stderr");
+          callbacks.onEvent?.(`stderr: ${text.slice(0, 100)}`);
+        }
       });
 
       // Process exit

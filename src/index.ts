@@ -5,7 +5,7 @@ import { Orchestrator } from "./orchestrator/index.js";
 import { ScannerRunner } from "./scanners/index.js";
 import { IntegrationServer } from "./integrations/index.js";
 import { WebDashboard, renderDashboard } from "./dashboard/index.js";
-import { createLogger } from "./shared/logger.js";
+import { createLogger, disableStdoutLogging, enableStdoutLogging } from "./shared/logger.js";
 
 const logger = createLogger("sinfonia");
 
@@ -109,6 +109,9 @@ export class Sinfonia {
   }
 
   private startTui(): void {
+    // Suppress pino stdout output so it doesn't corrupt the TUI
+    disableStdoutLogging();
+
     // Clear screen and render
     process.stdout.write("\x1b[2J\x1b[H");
 
@@ -128,6 +131,7 @@ export class Sinfonia {
     if (this.tuiInterval) {
       clearInterval(this.tuiInterval);
       this.tuiInterval = null;
+      enableStdoutLogging();
     }
   }
 }
