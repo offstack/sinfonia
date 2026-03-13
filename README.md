@@ -57,13 +57,29 @@ export LINEAR_API_KEY=lin_api_xxxxxxxxxxxxx
 
 ### 4. Choose Your Linear Project
 
-```bash
-# List available Linear teams/projects
-npx sinfonia projects list
+Sinfonia needs to know which Linear team/project to monitor. First, see what's available:
 
-# Switch to a specific project
+```bash
+npx sinfonia projects list
+```
+
+This prints all teams in your Linear workspace with their slug and workflow states:
+
+```
+  MYAPP  My Application
+  States: Backlog, Todo, In Progress, Done
+
+  INFRA  Infrastructure
+  States: Triage, Todo, In Progress, Review, Done
+```
+
+Then pick the one Sinfonia should work on:
+
+```bash
 npx sinfonia projects use MYAPP
 ```
+
+This updates `project_slug` in your `sinfonia.yaml`. You can switch projects at any time — restart Sinfonia for it to take effect.
 
 ### 5. Start
 
