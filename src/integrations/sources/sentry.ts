@@ -1,5 +1,4 @@
-import { createHmac } from "node:crypto";
-import { createHash } from "node:crypto";
+import { createHmac, createHash, timingSafeEqual } from "node:crypto";
 import type { Integration } from "./base.js";
 import type { Finding } from "../../shared/types.js";
 import type { IntegrationSourceConfig } from "../../config/schema.js";
@@ -41,7 +40,11 @@ export const sentryIntegration: Integration = {
     if (!signature || !config.secret) return false;
 
     const expected = createHmac("sha256", config.secret).update(body).digest("hex");
-    return signature === expected;
+    try {
+      return timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(expected, "hex"));
+    } catch {
+      return false; // length mismatch
+    }
   },
 
   transform(payload: unknown, config: IntegrationSourceConfig): Finding | null {

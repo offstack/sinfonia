@@ -195,6 +195,12 @@ export class LinearClient implements TrackerAdapter {
   async createIssue(input: CreateIssueInput): Promise<Issue> {
     await this.ensureProjectContext();
 
+    // Resolve label names to IDs (find existing or create new labels)
+    let labelIds: string[] | undefined;
+    if (input.labels && input.labels.length > 0) {
+      labelIds = await this.resolveOrCreateLabelIds(input.labels);
+    }
+
     const variables: Record<string, unknown> = {
       teamId: this.teamId,
       title: input.title,
@@ -207,18 +213,23 @@ export class LinearClient implements TrackerAdapter {
       if (stateId) variables.stateId = stateId;
     }
 
+    if (labelIds && labelIds.length > 0) {
+      variables.labelIds = labelIds;
+    }
+
     const data = await this.graphql<{
       issueCreate: {
         issue: LinearIssueNode;
       };
     }>(
-      `mutation($teamId: ID!, $title: String!, $description: String!, $priority: Int, $stateId: ID) {
+      `mutation($teamId: ID!, $title: String!, $description: String!, $priority: Int, $stateId: ID, $labelIds: [String!]) {
         issueCreate(input: {
           teamId: $teamId
           title: $title
           description: $description
           priority: $priority
           stateId: $stateId
+          labelIds: $labelIds
         }) {
           issue {
             id identifier title description priority createdAt
@@ -233,18 +244,61 @@ export class LinearClient implements TrackerAdapter {
     );
 
     const issue = this.toIssue(data.issueCreate.issue);
-    logger.info({ identifier: issue.identifier }, "created issue");
+    logger.info({ identifier: issue.identifier, labels: input.labels }, "created issue");
     return issue;
+  }
+
+  private async resolveOrCreateLabelIds(labelNames: string[]): Promise<string[]> {
+    // Fetch existing labels for the team
+    const data = await this.graphql<{
+      issueLabels: { nodes: Array<{ id: string; name: string }> };
+    }>(
+      `query($teamId: ID) {
+        issueLabels(filter: { team: { id: { eq: $teamId } } }, first: 250) {
+          nodes { id name }
+        }
+      }`,
+      { teamId: this.teamId },
+    );
+
+    const existingLabels = new Map(data.issueLabels.nodes.map((l) => [l.name, l.id]));
+    const ids: string[] = [];
+
+    for (const name of labelNames) {
+      const existingId = existingLabels.get(name);
+      if (existingId) {
+        ids.push(existingId);
+      } else {
+        // Create the label
+        try {
+          const created = await this.graphql<{
+            issueLabelCreate: { issueLabel: { id: string } };
+          }>(
+            `mutation($teamId: ID!, $name: String!) {
+              issueLabelCreate(input: { teamId: $teamId, name: $name }) {
+                issueLabel { id }
+              }
+            }`,
+            { teamId: this.teamId, name },
+          );
+          ids.push(created.issueLabelCreate.issueLabel.id);
+        } catch (err) {
+          logger.warn({ label: name, err }, "failed to create label, skipping");
+        }
+      }
+    }
+
+    return ids;
   }
 
   async searchIssues(query: string): Promise<Issue[]> {
     await this.ensureProjectContext();
 
     const data = await this.graphql<{
-      searchIssues: { nodes: LinearIssueNode[] };
+      issueSearch: { nodes: LinearIssueNode[] };
     }>(
       `query($teamId: ID!, $query: String!) {
-        searchIssues(filter: { team: { id: { eq: $teamId } } }, term: $query, first: 20) {
+        issueSearch(filter: { team: { id: { eq: $teamId } } }, term: $query, first: 20) {
           nodes {
             id identifier title description priority createdAt
             assignee { id }
@@ -257,7 +311,7 @@ export class LinearClient implements TrackerAdapter {
       { teamId: this.teamId, query },
     );
 
-    return data.searchIssues.nodes.map((n) => this.toIssue(n));
+    return data.issueSearch.nodes.map((n) => this.toIssue(n));
   }
 
   async listTeams(): Promise<LinearTeam[]> {

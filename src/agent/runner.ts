@@ -52,11 +52,16 @@ export class AgentRunner {
       "starting agent turn",
     );
 
+    // Build env: inherit process env but remove CLAUDECODE to allow
+    // nested Claude Code sessions (Sinfonia itself may run inside Claude Code)
+    const childEnv = { ...process.env };
+    delete childEnv.CLAUDECODE;
+
     const child = spawn(this.config.command, args, {
       cwd: workspacePath,
       stdio: ["ignore", "pipe", "pipe"],
       env: {
-        ...process.env,
+        ...childEnv,
         SINFONIA_ISSUE_ID: issue.id,
         SINFONIA_ISSUE_IDENTIFIER: issue.identifier,
         SINFONIA_SESSION_ID: session.sessionId,
@@ -74,7 +79,8 @@ export class AgentRunner {
   private buildArgs(prompt: string, resumeThreadId?: string): string[] {
     const args: string[] = [
       "-p", prompt,
-      "--output-format", "json",
+      "--output-format", "stream-json",
+      "--verbose",
       "--max-turns", String(this.config.max_turns),
     ];
 
@@ -154,7 +160,7 @@ export class AgentRunner {
           if (!line.trim()) continue;
           try {
             const event = JSON.parse(line);
-            this.handleEvent(event, tokens, callbacks, logger);
+            this.handleEvent(event, session, tokens, callbacks, logger);
           } catch {
             // Not JSON — log as raw output
             callbacks.onEvent?.("output", line);
@@ -189,14 +195,33 @@ export class AgentRunner {
 
   private handleEvent(
     event: Record<string, unknown>,
+    session: Session,
     tokens: { input: number; output: number },
     callbacks: AgentRunCallbacks,
     logger: ReturnType<typeof createSessionLogger>,
   ): void {
     const type = (event.type as string) ?? "unknown";
 
-    // Token usage updates
-    if (event.usage && typeof event.usage === "object") {
+    // stream-json: assistant messages contain message.usage with per-message tokens
+    if (type === "assistant" && event.message && typeof event.message === "object") {
+      const message = event.message as Record<string, unknown>;
+      if (message.usage && typeof message.usage === "object") {
+        const usage = message.usage as Record<string, number>;
+        if (usage.input_tokens) tokens.input += usage.input_tokens;
+        if (usage.output_tokens) tokens.output += usage.output_tokens;
+        callbacks.onTokens?.(tokens.input, tokens.output);
+      }
+    }
+
+    // stream-json: result event has session_id for --resume
+    if (type === "result") {
+      if (typeof event.session_id === "string") {
+        session.threadId = event.session_id;
+      }
+    }
+
+    // Fallback: top-level usage (for other event formats)
+    if (event.usage && typeof event.usage === "object" && type !== "assistant") {
       const usage = event.usage as Record<string, number>;
       if (usage.input_tokens) tokens.input += usage.input_tokens;
       if (usage.output_tokens) tokens.output += usage.output_tokens;

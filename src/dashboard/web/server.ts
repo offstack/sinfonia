@@ -86,8 +86,18 @@ export class WebDashboard {
     // Health check
     this.app.get("/health", async () => ({ status: "ok" }));
 
-    await this.app.listen({ port: this.port, host: "0.0.0.0" });
-    logger.info({ port: this.port }, "web dashboard started");
+    try {
+      await this.app.listen({ port: this.port, host: "0.0.0.0" });
+      logger.info({ port: this.port }, "web dashboard started");
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code === "EADDRINUSE") {
+        logger.error({ port: this.port }, `port ${this.port} is already in use — web dashboard disabled`);
+        this.app = null;
+      } else {
+        throw err;
+      }
+    }
   }
 
   async stop(): Promise<void> {

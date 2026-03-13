@@ -119,7 +119,7 @@ function badge(state) {
   if (s === 'todo') return '<span class="badge badge-todo">Todo</span>';
   if (s === 'in progress') return '<span class="badge badge-progress">In Progress</span>';
   if (s === 'rework') return '<span class="badge badge-rework">Rework</span>';
-  return '<span class="badge">' + state + '</span>';
+  return '<span class="badge">' + esc(state) + '</span>';
 }
 function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 

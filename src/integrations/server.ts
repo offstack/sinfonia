@@ -38,6 +38,24 @@ export class IntegrationServer {
 
     this.app = Fastify({ logger: false });
 
+    // Capture raw request body for HMAC signature verification.
+    // Webhook signatures are computed against the exact bytes sent over the wire.
+    // Re-serializing parsed JSON with JSON.stringify may produce different bytes.
+    // We override the JSON parser to stash the raw string on the request object.
+    this.app.removeContentTypeParser("application/json");
+    this.app.addContentTypeParser(
+      "application/json",
+      { parseAs: "string" },
+      (req, body, done) => {
+        try {
+          (req as unknown as { rawBody: string }).rawBody = body as string;
+          done(null, JSON.parse(body as string));
+        } catch (err) {
+          done(err as Error, undefined);
+        }
+      },
+    );
+
     // Register webhook routes for each enabled integration
     for (const [name, sourceConfig] of enabledSources) {
       const integration = this.registry.get(name);
@@ -48,7 +66,7 @@ export class IntegrationServer {
 
       this.app.post(`/webhooks/${name}`, async (request, reply) => {
         const headers = request.headers as Record<string, string>;
-        const rawBody = JSON.stringify(request.body);
+        const rawBody = (request as unknown as { rawBody?: string }).rawBody ?? JSON.stringify(request.body);
 
         // Verify signature
         if (!integration.verifySignature(headers, rawBody, sourceConfig)) {
@@ -94,8 +112,18 @@ export class IntegrationServer {
     // Health check
     this.app.get("/health", async () => ({ status: "ok" }));
 
-    await this.app.listen({ port: this.config.server_port, host: "0.0.0.0" });
-    logger.info({ port: this.config.server_port }, "integration webhook server started");
+    try {
+      await this.app.listen({ port: this.config.server_port, host: "0.0.0.0" });
+      logger.info({ port: this.config.server_port }, "integration webhook server started");
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code === "EADDRINUSE") {
+        logger.error({ port: this.config.server_port }, `port ${this.config.server_port} is already in use — webhook server disabled`);
+        this.app = null;
+      } else {
+        throw err;
+      }
+    }
   }
 
   async stop(): Promise<void> {

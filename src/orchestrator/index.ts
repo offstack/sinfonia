@@ -21,6 +21,7 @@ export class Orchestrator {
   private state: OrchestratorState;
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private polling = false;
   private stopFlags = new Map<string, boolean>();
   private eventHandlers: OrchestratorEventHandler[] = [];
 
@@ -116,6 +117,11 @@ export class Orchestrator {
   }
 
   private async pollTick(): Promise<void> {
+    if (this.polling) {
+      logger.debug("skipping poll tick, previous tick still running");
+      return;
+    }
+    this.polling = true;
     try {
       // 1. Reconcile running issues
       await this.reconcile();
@@ -145,6 +151,8 @@ export class Orchestrator {
       });
     } catch (err) {
       logger.error({ err }, "poll tick failed");
+    } finally {
+      this.polling = false;
     }
   }
 
@@ -185,7 +193,7 @@ export class Orchestrator {
     }
   }
 
-  private async dispatchIssue(issue: Issue): Promise<void> {
+  private async dispatchIssue(issue: Issue, attempt = 1): Promise<void> {
     if (!this.state.claim(issue.id)) {
       logger.debug({ issue: issue.identifier }, "issue already claimed, skipping");
       return;
@@ -254,7 +262,7 @@ export class Orchestrator {
         this.scheduleRetry(issue.id, issue.identifier, 1, true);
       } else {
         logger.warn({ issue: issue.identifier, outcome: result.outcome, error: result.error }, "agent ended");
-        this.scheduleRetry(issue.id, issue.identifier, 1, false, result.error);
+        this.scheduleRetry(issue.id, issue.identifier, attempt, false, result.error);
       }
 
       this.emit("dispatch_complete", {
@@ -265,7 +273,7 @@ export class Orchestrator {
     } catch (err) {
       logger.error({ err, issue: issue.identifier }, "dispatch error");
       this.state.removeRunning(issue.id);
-      this.scheduleRetry(issue.id, issue.identifier, 1, false, String(err));
+      this.scheduleRetry(issue.id, issue.identifier, attempt, false, String(err));
     }
   }
 
@@ -276,6 +284,13 @@ export class Orchestrator {
     isContinuation: boolean,
     error?: string,
   ): void {
+    const MAX_RETRY_ATTEMPTS = 10;
+    if (!isContinuation && attempt > MAX_RETRY_ATTEMPTS) {
+      logger.warn({ issueId, identifier: issueIdentifier, attempt }, "max retry attempts reached, releasing issue");
+      this.state.release(issueId);
+      return;
+    }
+
     const delay = calculateRetryDelay(
       attempt,
       this.config.orchestrator.retry.max_backoff_ms,
@@ -304,7 +319,7 @@ export class Orchestrator {
           return;
         }
 
-        await this.dispatchIssue(issue);
+        await this.dispatchIssue(issue, attempt + 1);
       } catch (err) {
         logger.error({ err, issueId }, "retry dispatch failed");
         this.scheduleRetry(issueId, issueIdentifier, attempt + 1, false, String(err));

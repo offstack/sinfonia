@@ -58,7 +58,9 @@ export function renderDashboard(snapshot: OrchestratorSnapshot): string {
     for (const session of snapshot.running) {
       const age = formatDuration(Date.now() - session.startedAt.getTime());
       const stageColor = getStageColor(session.state);
-      const truncSession = session.sessionId.slice(0, 4) + "..." + session.sessionId.slice(-6);
+      const truncSession = session.sessionId.length > 10
+        ? session.sessionId.slice(0, 4) + "..." + session.sessionId.slice(-4)
+        : session.sessionId || "—";
       const truncEvent = (session.lastEvent ?? "").slice(0, 50);
 
       lines.push(

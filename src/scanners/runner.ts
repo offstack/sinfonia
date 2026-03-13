@@ -188,12 +188,13 @@ export class ScannerRunner {
 
   private matchesGlob(filePath: string, patterns: string[]): boolean {
     // Simple glob matching (supports ** and *)
+    // IMPORTANT: escape dots FIRST, before replacing * and **
     for (const pattern of patterns) {
       const regex = pattern
+        .replace(/\./g, "\\.")           // escape dots first
         .replace(/\*\*/g, "{{GLOBSTAR}}")
         .replace(/\*/g, "[^/]*")
-        .replace(/{{GLOBSTAR}}/g, ".*")
-        .replace(/\./g, "\\.");
+        .replace(/{{GLOBSTAR}}/g, ".*");
 
       if (new RegExp(`^${regex}$`).test(filePath)) return true;
     }

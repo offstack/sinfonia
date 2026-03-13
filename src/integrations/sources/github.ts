@@ -1,4 +1,4 @@
-import { createHmac, createHash } from "node:crypto";
+import { createHmac, createHash, timingSafeEqual } from "node:crypto";
 import type { Integration } from "./base.js";
 import type { Finding } from "../../shared/types.js";
 import type { IntegrationSourceConfig } from "../../config/schema.js";
@@ -124,7 +124,11 @@ export const githubIntegration: Integration = {
     if (!signature || !config.secret) return false;
 
     const expected = "sha256=" + createHmac("sha256", config.secret).update(body).digest("hex");
-    return signature === expected;
+    try {
+      return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    } catch {
+      return false; // length mismatch
+    }
   },
 
   transform(payload: unknown, _config: IntegrationSourceConfig): Finding | null {

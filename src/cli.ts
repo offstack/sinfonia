@@ -30,7 +30,7 @@ program
   .option("--web", "Launch web dashboard instead of TUI")
   .action(async (opts) => {
     const configPath = resolveConfigPath(opts.config);
-    const config = loadConfig(configPath);
+    const config = loadConfigSafe(configPath);
 
     const errors = validateConfig(config);
     if (errors.length > 0) {
@@ -68,7 +68,7 @@ program
   .action(async (opts) => {
     if (opts.web) {
       const configPath = resolveConfigPath(opts.config);
-      const config = loadConfig(configPath);
+      const config = loadConfigSafe(configPath);
       console.log(`Open http://localhost:${config.dashboard.web_port} in your browser`);
       return;
     }
@@ -85,7 +85,7 @@ program
   .option("-f, --files <glob>", "File filter (glob pattern)")
   .action(async (opts) => {
     const configPath = resolveConfigPath(opts.config);
-    const config = loadConfig(configPath);
+    const config = loadConfigSafe(configPath);
 
     const { LinearClient } = await import("./tracker/index.js");
     const { ScannerRunner } = await import("./scanners/index.js");
@@ -134,7 +134,7 @@ integrationsCmd
   .option("-c, --config <path>", "Path to sinfonia.yaml")
   .action((opts) => {
     const configPath = resolveConfigPath(opts.config);
-    const config = loadConfig(configPath);
+    const config = loadConfigSafe(configPath);
 
     console.log("\nIntegrations:");
     for (const [name, source] of Object.entries(config.integrations.sources)) {
@@ -169,7 +169,7 @@ scannersCmd
   .option("-c, --config <path>", "Path to sinfonia.yaml")
   .action((opts) => {
     const configPath = resolveConfigPath(opts.config);
-    const config = loadConfig(configPath);
+    const config = loadConfigSafe(configPath);
 
     console.log("\nScanners:");
     for (const [name, mod] of Object.entries(config.scanners.modules)) {
@@ -235,7 +235,7 @@ projectsCmd
     // Check if config exists, show current selection
     try {
       const configPath = resolveConfigPath(opts.config);
-      const config = loadConfig(configPath);
+      const config = loadConfigSafe(configPath);
       console.log(`Currently configured: ${BOLD}${config.tracker.project_slug}${RESET}`);
       console.log(`To switch: ${DIM}sinfonia projects use <SLUG>${RESET}\n`);
     } catch {
@@ -312,6 +312,16 @@ function resolveConfigPath(configOpt?: string): string {
     process.exit(1);
   }
   return found;
+}
+
+function loadConfigSafe(configPath: string): ReturnType<typeof loadConfig> {
+  try {
+    return loadConfig(configPath);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`\n${message}\n\n`);
+    return process.exit(1);
+  }
 }
 
 function toggleIntegration(configOpt: string | undefined, name: string, enabled: boolean): void {
