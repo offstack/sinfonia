@@ -5,6 +5,11 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { loadConfig, findConfigFile, validateConfig } from "./config/index.js";
+import {
+  toggleScanner as _toggleScanner,
+  toggleIntegration as _toggleIntegration,
+  switchProject as _switchProject,
+} from "./config/mutator.js";
 import { Sinfonia } from "./index.js";
 import { renderDashboard } from "./dashboard/index.js";
 import { createLogger } from "./shared/logger.js";
@@ -249,14 +254,7 @@ projectsCmd
   .option("-c, --config <path>", "Path to sinfonia.yaml")
   .action((slug, opts) => {
     const configPath = resolveConfigPath(opts.config);
-    const raw = readFileSync(configPath, "utf-8");
-    const parsed = parseYaml(raw) as Record<string, unknown>;
-
-    const tracker = (parsed.tracker ?? {}) as Record<string, unknown>;
-    tracker.project_slug = slug;
-    parsed.tracker = tracker;
-
-    writeFileSync(configPath, stringifyYaml(parsed));
+    _switchProject(configPath, slug);
     console.log(`Switched to Linear project: ${BOLD}${slug}${RESET}`);
     console.log("Restart Sinfonia for changes to take effect.");
   });
@@ -326,43 +324,13 @@ function loadConfigSafe(configPath: string): ReturnType<typeof loadConfig> {
 
 function toggleIntegration(configOpt: string | undefined, name: string, enabled: boolean): void {
   const configPath = resolveConfigPath(configOpt);
-  const raw = readFileSync(configPath, "utf-8");
-  const parsed = parseYaml(raw) as Record<string, unknown>;
-
-  const integrations = (parsed.integrations ?? {}) as Record<string, unknown>;
-  const sources = (integrations.sources ?? {}) as Record<string, Record<string, unknown>>;
-
-  if (!sources[name]) {
-    sources[name] = { enabled };
-  } else {
-    sources[name].enabled = enabled;
-  }
-
-  integrations.sources = sources;
-  parsed.integrations = integrations;
-
-  writeFileSync(configPath, stringifyYaml(parsed));
+  _toggleIntegration(configPath, name, enabled);
   console.log(`Integration "${name}" ${enabled ? "enabled" : "disabled"}`);
 }
 
 function toggleScanner(configOpt: string | undefined, name: string, enabled: boolean): void {
   const configPath = resolveConfigPath(configOpt);
-  const raw = readFileSync(configPath, "utf-8");
-  const parsed = parseYaml(raw) as Record<string, unknown>;
-
-  const scanners = (parsed.scanners ?? {}) as Record<string, unknown>;
-  const modules = (scanners.modules ?? {}) as Record<string, Record<string, unknown>>;
-
-  if (!modules[name]) {
-    modules[name] = { enabled };
-  } else {
-    modules[name].enabled = enabled;
-  }
-
-  scanners.modules = modules;
-  parsed.scanners = scanners;
-
-  writeFileSync(configPath, stringifyYaml(parsed));
+  _toggleScanner(configPath, name, enabled);
   console.log(`Scanner "${name}" ${enabled ? "enabled" : "disabled"}`);
 }
 

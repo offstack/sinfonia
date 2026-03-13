@@ -99,20 +99,45 @@ npx sinfonia start --web
 
 ### Web Dashboard
 
-Launch with `--web` to get a real-time browser dashboard at the configured port (default `3200`):
+Launch with `--web` to get a full-featured browser dashboard at the configured port (default `3200`):
 
 ```bash
 npx sinfonia start --web
 # Open http://localhost:3200
 ```
 
-The web dashboard shows:
-- **Live stats** — running agents, completed tasks, total tokens, uptime, retry queue depth
-- **Running agents table** — issue ID, stage, age, turn count, tokens, session, last event
-- **Backoff queue** — pending retries with attempt count and time until next retry
-- **Scanners & integrations** — on/off status for all configured modules
+**Pages:**
 
-Auto-refreshes every 2 seconds. Use the Refresh Poll button to trigger an immediate Linear sync.
+- **Overview** — Live stats (agents, tokens, runtime), running agents table with real-time events, retry queue
+- **Agents** — Detailed view of all agents with token breakdowns (in/out), session IDs, retry queue with countdowns, completed issues
+- **Scanners** — Toggle switches to enable/disable scanner modules directly from the browser
+- **Integrations** — Toggle switches to enable/disable integration sources
+- **Settings** — Configure state flow transitions, orchestrator settings (polling interval, max agents), switch Linear projects with available team states display
+
+All management actions write to `sinfonia.yaml` and are hot-reloaded automatically — no restart needed.
+
+### TUI Dashboard
+
+The default terminal dashboard shows real-time agent activity with human-readable events like "Reading src/index.ts", "Running: npm test", "Thinking..." instead of raw event types.
+
+### Completion Comments
+
+When an agent successfully completes an issue, Sinfonia posts a comment on Linear with:
+- Branch name
+- Clickable commit link (auto-detects GitHub/GitLab from git remote)
+- Token usage breakdown (input/output)
+
+### Configurable State Flow
+
+Different teams have different Linear workflows. Configure `state_flow` to match yours:
+
+```yaml
+orchestrator:
+  state_flow:
+    on_dispatch: In Progress     # when agent starts working
+    on_success: Ready for Review # when agent succeeds
+    on_failure: Todo             # (optional) when max retries exhausted
+```
 
 ## How It Works
 
@@ -175,6 +200,10 @@ orchestrator:
   max_concurrent_by_state:
     todo: 3
     rework: 2
+  state_flow:
+    on_dispatch: In Progress
+    on_success: Done
+    # on_failure: Todo          # optional
   retry:
     max_backoff_ms: 300000
 

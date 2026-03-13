@@ -174,7 +174,7 @@ export class AgentRunner {
         const text = chunk.toString().trim();
         if (text) {
           logger.warn({ stderr: text.slice(0, 500) }, "agent stderr");
-          callbacks.onEvent?.(`stderr: ${text.slice(0, 100)}`);
+          callbacks.onEvent?.("stderr", { text: text.slice(0, 200) });
         }
       });
 

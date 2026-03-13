@@ -61,7 +61,7 @@ export function renderDashboard(snapshot: OrchestratorSnapshot): string {
       const truncSession = session.sessionId.length > 10
         ? session.sessionId.slice(0, 4) + "..." + session.sessionId.slice(-4)
         : session.sessionId || "—";
-      const truncEvent = (session.lastEvent ?? "").slice(0, 50);
+      const truncEvent = (session.lastEvent ?? "").slice(0, 60);
 
       lines.push(
         `  ${GREEN}*${RESET} ${padRight(session.issueIdentifier, 11)} ${stageColor}${padRight(session.state, 13)}${RESET} ${padRight(`${age} / ${session.turn}`, 12)} ${padRight(formatTokens(session.tokens.input + session.tokens.output), 12)} ${padRight(truncSession, 16)} ${DIM}${truncEvent}${RESET}`,

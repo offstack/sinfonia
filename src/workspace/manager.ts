@@ -2,7 +2,7 @@ import { mkdirSync, existsSync, rmSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { simpleGit } from "simple-git";
 import type { WorkspaceConfig } from "../config/schema.js";
-import type { Issue } from "../shared/types.js";
+import type { Issue, WorkspaceInfo } from "../shared/types.js";
 import { buildWorkspacePath, sanitizeIdentifier, slugify } from "./sanitizer.js";
 import { runHook } from "./hooks.js";
 import { createLogger } from "../shared/logger.js";
@@ -93,6 +93,52 @@ export class WorkspaceManager {
 
   getWorkspacePath(issueIdentifier: string): string {
     return buildWorkspacePath(this.config.root, issueIdentifier);
+  }
+
+  async getWorkspaceInfo(wsPath: string): Promise<WorkspaceInfo | null> {
+    try {
+      if (!existsSync(wsPath)) return null;
+      const git = simpleGit(wsPath);
+
+      // Get branch name
+      const branch = (await git.raw(["rev-parse", "--abbrev-ref", "HEAD"])).trim();
+
+      // Get latest commit SHA + message
+      const logResult = await git.log({ maxCount: 1 });
+      const latest = logResult.latest;
+      const commitSha = latest?.hash ?? "";
+      const commitMessage = latest?.message ?? "";
+
+      // Get remote URL and convert to HTTPS
+      let repoUrl: string | null = null;
+      try {
+        const remoteUrl = (await git.raw(["remote", "get-url", "origin"])).trim();
+        repoUrl = this.parseRepoUrl(remoteUrl);
+      } catch {
+        // No remote configured — that's fine
+      }
+
+      return { branch, commitSha, commitMessage, repoUrl };
+    } catch (err) {
+      logger.warn({ err, wsPath }, "failed to get workspace info");
+      return null;
+    }
+  }
+
+  private parseRepoUrl(remoteUrl: string): string | null {
+    // SSH: git@github.com:owner/repo.git → https://github.com/owner/repo
+    const sshMatch = remoteUrl.match(/^git@([^:]+):(.+?)(?:\.git)?$/);
+    if (sshMatch) {
+      return `https://${sshMatch[1]}/${sshMatch[2]}`;
+    }
+
+    // HTTPS: https://github.com/owner/repo.git → https://github.com/owner/repo
+    const httpsMatch = remoteUrl.match(/^https?:\/\/(.+?)(?:\.git)?$/);
+    if (httpsMatch) {
+      return `https://${httpsMatch[1]}`;
+    }
+
+    return null;
   }
 
   listWorkspaces(): string[] {

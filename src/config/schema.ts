@@ -8,11 +8,18 @@ const trackerSchema = z.object({
   assignee: z.string().optional(),
 });
 
+const stateFlowSchema = z.object({
+  on_dispatch: z.string().default("In Progress"),
+  on_success: z.string().default("Done"),
+  on_failure: z.string().optional(),
+}).default({});
+
 const orchestratorSchema = z.object({
   polling_interval_ms: z.number().int().positive().default(30000),
   max_concurrent_agents: z.number().int().positive().default(5),
   max_concurrent_by_state: z.record(z.string(), z.number().int().positive()).default({}),
-  done_state: z.string().default("Done"),
+  done_state: z.string().default("Done"), // legacy — use state_flow instead
+  state_flow: stateFlowSchema,
   retry: z.object({
     max_backoff_ms: z.number().int().positive().default(300000),
   }).default({}),
@@ -108,4 +115,5 @@ export type ScannersConfig = z.infer<typeof scannersSchema>;
 export type ScannerModuleConfig = z.infer<typeof scannerModuleSchema>;
 export type IntegrationsConfig = z.infer<typeof integrationsSchema>;
 export type IntegrationSourceConfig = z.infer<typeof integrationSourceSchema>;
+export type StateFlowConfig = z.infer<typeof stateFlowSchema>;
 export type DashboardConfig = z.infer<typeof dashboardSchema>;

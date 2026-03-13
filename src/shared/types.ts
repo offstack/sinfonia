@@ -65,6 +65,14 @@ export interface IntegrationEvent {
   receivedAt: Date;
 }
 
+// Workspace info (for completion comments)
+export interface WorkspaceInfo {
+  branch: string;
+  commitSha: string;
+  commitMessage: string;
+  repoUrl: string | null;
+}
+
 // Orchestrator snapshot (for dashboard)
 export interface OrchestratorSnapshot {
   running: RunningSession[];

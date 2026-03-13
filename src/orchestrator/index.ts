@@ -7,6 +7,7 @@ import { reconcileRunning } from "./reconciler.js";
 import { calculateRetryDelay, createRetryEntry } from "./retry.js";
 import { WorkspaceManager } from "../workspace/manager.js";
 import { AgentRunner } from "../agent/runner.js";
+import { formatAgentEvent } from "../agent/event-formatter.js";
 import { createLogger } from "../shared/logger.js";
 
 const logger = createLogger("orchestrator");
@@ -204,14 +205,15 @@ export class Orchestrator {
     this.emit("dispatch", { identifier: issue.identifier, state: issue.state });
 
     try {
-      // Move issue to "In Progress" in tracker (non-fatal if it fails)
+      // Move issue to dispatch state (e.g. "In Progress") in tracker
+      const stateFlow = this.resolveStateFlow();
       let currentState = issue.state;
-      if (currentState.toLowerCase() !== "in progress") {
+      if (stateFlow.on_dispatch && currentState.toLowerCase() !== stateFlow.on_dispatch.toLowerCase()) {
         try {
-          await this.tracker.updateIssueState(issue.id, "In Progress");
-          currentState = "In Progress";
+          await this.tracker.updateIssueState(issue.id, stateFlow.on_dispatch);
+          currentState = stateFlow.on_dispatch;
         } catch (err) {
-          logger.warn({ err, issue: issue.identifier }, "failed to transition issue to In Progress");
+          logger.warn({ err, issue: issue.identifier, target: stateFlow.on_dispatch }, "failed to transition issue on dispatch");
         }
       }
 
@@ -242,9 +244,12 @@ export class Orchestrator {
 
       // Run agent
       const result = await this.agentRunner.run(issue, wsPath, null, {
-        onEvent: (event) => {
-          this.state.updateRunningEvent(issue.id, event);
-          this.emit("agent_event", { issueId: issue.id, event });
+        onEvent: (type, data) => {
+          const formatted = formatAgentEvent(type, data as Record<string, unknown> | undefined);
+          if (formatted !== null) {
+            this.state.updateRunningEvent(issue.id, formatted);
+          }
+          this.emit("agent_event", { issueId: issue.id, type, data });
         },
         onTokens: (input, output) => {
           this.state.updateRunningTokens(issue.id, input, output);
@@ -271,13 +276,36 @@ export class Orchestrator {
       if (result.outcome === "succeeded") {
         logger.info({ issue: issue.identifier, tokens: result.tokens }, "agent succeeded");
 
-        // Move issue to done_state (e.g. "Ready for Review" or "Done")
-        const doneState = this.config.orchestrator.done_state;
+        // Post completion comment with branch/commit info
         try {
-          await this.tracker.updateIssueState(issue.id, doneState);
-          logger.info({ issue: issue.identifier, state: doneState }, "issue transitioned to done state");
+          const wsInfo = await this.workspace.getWorkspaceInfo(wsPath);
+          if (wsInfo && wsInfo.branch) {
+            const commitLink = wsInfo.repoUrl && wsInfo.commitSha
+              ? `[\`${wsInfo.commitSha.slice(0, 7)}\`](${wsInfo.repoUrl}/commit/${wsInfo.commitSha})`
+              : wsInfo.commitSha ? `\`${wsInfo.commitSha.slice(0, 7)}\`` : "";
+            const totalTokens = result.tokens.input + result.tokens.output;
+            const lines = [
+              `🤖 Agent completed successfully.`,
+              ``,
+              `**Branch:** \`${wsInfo.branch}\``,
+              commitLink ? `**Commit:** ${commitLink} — ${wsInfo.commitMessage}` : "",
+              ``,
+              `_Tokens: ${totalTokens.toLocaleString()} (in: ${result.tokens.input.toLocaleString()}, out: ${result.tokens.output.toLocaleString()})_`,
+            ];
+            await this.tracker.createComment(issue.id, lines.filter(Boolean).join("\n"));
+            logger.info({ issue: issue.identifier, branch: wsInfo.branch }, "posted completion comment");
+          }
         } catch (err) {
-          logger.warn({ err, issue: issue.identifier, state: doneState }, "failed to transition issue to done state");
+          logger.warn({ err, issue: issue.identifier }, "failed to post completion comment");
+        }
+
+        // Move issue to success state (e.g. "Ready for Review" or "Done")
+        const successState = stateFlow.on_success;
+        try {
+          await this.tracker.updateIssueState(issue.id, successState);
+          logger.info({ issue: issue.identifier, state: successState }, "issue transitioned to done state");
+        } catch (err) {
+          logger.warn({ err, issue: issue.identifier, state: successState }, "failed to transition issue to done state");
         }
 
         this.state.markCompleted(issue.id);
@@ -298,6 +326,23 @@ export class Orchestrator {
     }
   }
 
+  private resolveStateFlow(): { on_dispatch: string; on_success: string; on_failure?: string } {
+    const flow = this.config.orchestrator.state_flow;
+    const legacyDone = this.config.orchestrator.done_state;
+
+    // If state_flow.on_success is still the default ("Done") but done_state was explicitly set
+    // to something else, honor the legacy setting for backward compatibility
+    const on_success = flow.on_success === "Done" && legacyDone !== "Done"
+      ? legacyDone
+      : flow.on_success;
+
+    return {
+      on_dispatch: flow.on_dispatch,
+      on_success,
+      on_failure: flow.on_failure,
+    };
+  }
+
   private scheduleRetry(
     issueId: string,
     issueIdentifier: string,
@@ -315,6 +360,15 @@ export class Orchestrator {
         this.state.markCompleted(issueId);
       } else {
         logger.warn({ issueId, identifier: issueIdentifier, attempt }, "max retry attempts reached, releasing issue");
+
+        // Transition to failure state if configured
+        const stateFlow = this.resolveStateFlow();
+        if (stateFlow.on_failure) {
+          this.tracker.updateIssueState(issueId, stateFlow.on_failure).catch((err) => {
+            logger.warn({ err, issueId, state: stateFlow.on_failure }, "failed to transition issue to failure state");
+          });
+        }
+
         this.state.release(issueId);
       }
       return;

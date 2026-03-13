@@ -74,11 +74,13 @@ export class Sinfonia {
     if (this.options.web && this.orchestrator) {
       this.webDashboard = new WebDashboard({
         orchestrator: this.orchestrator,
+        tracker: this.tracker,
         scannerRunner: this.scannerRunner,
         integrationServer: this.integrationServer,
         port: config.dashboard.web_port,
         projectName: config.project.name,
         projectSlug: config.tracker.project_slug,
+        configPath: this.options.configPath,
       });
       await this.webDashboard.start();
       logger.info({ url: `http://localhost:${config.dashboard.web_port}` }, "Web dashboard available");

@@ -12,3 +12,10 @@ export type {
 } from "./schema.js";
 export { loadConfig, findConfigFile, validateConfig } from "./loader.js";
 export { ConfigWatcher, type ConfigChangeHandler } from "./watcher.js";
+export {
+  toggleScanner,
+  toggleIntegration,
+  updateStateFlow,
+  switchProject,
+  updateOrchestratorSettings,
+} from "./mutator.js";

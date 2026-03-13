@@ -22,7 +22,13 @@ orchestrator:
   max_concurrent_by_state:
     todo: 3
     rework: 2
-  done_state: Done          # Linear state to transition to when agent succeeds
+  # State flow — controls how issues transition through your workflow
+  # Customize to match your Linear project's states
+  state_flow:
+    on_dispatch: In Progress    # when agent starts working
+    on_success: Done            # when agent succeeds
+    # on_failure: Todo          # (optional) when max retries exhausted
+  # done_state: Done          # legacy — use state_flow.on_success instead
   retry:
     max_backoff_ms: 300000
 
